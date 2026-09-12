@@ -127,7 +127,11 @@
           <h3>AARYAN AQUA <span class="pro-badge">v5.2 PRO</span></h3>
           <span>Cloud Billing Hub</span>
         </div>
+        <button type="button" class="btn-close-sidebar-mobile no-print" onclick="closeMobileSidebar()" aria-label="Close menu" title="Close Menu">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
       </div>
+
 
       <!-- Navigation links -->
       <nav class="sidebar-nav">
@@ -192,6 +196,7 @@
           </div>
           <div id="live-cloud-sync-badge" class="cloud-sync-pill synced cursor-pointer" onclick="openDatabaseTelemetryModal()" title="1-Second Continuous Google Database Auto-Sync (Click for Telemetry HUD)">
             <span class="realtime-radar-dot active" id="sync-radar-dot"></span>
+            <i class="fa-solid fa-cloud" style="color: #10b981;"></i>
             <span id="sync-status-text">🟢 1s Google DB • Live</span>
           </div>
           <div id="live-whatsapp-pill" class="whatsapp-sync-pill connected cursor-pointer" onclick="openWhatsAppBotModal()" title="WhatsApp Bot Connected (+918367047947)">
