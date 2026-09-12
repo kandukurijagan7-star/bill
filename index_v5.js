@@ -10710,12 +10710,236 @@ window.executeUniversalShare = async function(channel) {
 let currentWebsiteQrUrl = "https://naqua.netlify.app";
 let currentShopUpiString = "upi://pay?pa=7386262139@upi&pn=Aaryan%20Aqua%20Needs&cu=INR";
 
+// WhatsApp Direct Chat QR Constants & Presets
+const WA_PHONE_NUMBER = "918367047947";
+const WA_PHONE_DISPLAY = "+91 8367047947";
+
+const WA_QR_PRESETS = {
+  general: "Hello Aaryan Aqua Needs, I would like to inquire about your aquaculture products and supplies.",
+  catalog: "Hello Aaryan Aqua Needs, please share your latest aquaculture product catalog and price list.",
+  bill: "Hello Aaryan Aqua Needs, I am inquiring regarding an invoice / billing receipt for my order.",
+  payment: "Hello Aaryan Aqua Needs, I have sent a payment. Please find the payment screenshot and UTR details."
+};
+
+let currentWaPreset = 'general';
+
 function getLiveWebsiteUrl() {
   if (window.location.protocol === 'file:' || !window.location.origin || window.location.origin === 'null') {
     return "https://naqua.netlify.app";
   }
   return window.location.origin + window.location.pathname;
 }
+
+window.renderWhatsAppChatQr = function(presetKey = currentWaPreset) {
+  currentWaPreset = presetKey || 'general';
+  const text = WA_QR_PRESETS[currentWaPreset] || WA_QR_PRESETS.general;
+  const waUrl = `https://wa.me/${WA_PHONE_NUMBER}?text=${encodeURIComponent(text)}`;
+
+  const canvas = document.getElementById("whatsapp-chat-qr-canvas");
+  if (canvas && typeof QRious !== "undefined") {
+    try {
+      new QRious({
+        element: canvas,
+        value: waUrl,
+        size: 260,
+        level: 'H'
+      });
+    } catch (e) {
+      console.warn("WhatsApp QR render failed:", e);
+    }
+  }
+};
+
+window.selectWhatsAppQrPreset = function(presetKey, btnEl) {
+  currentWaPreset = presetKey;
+  document.querySelectorAll(".wa-preset-chip").forEach(chip => {
+    chip.classList.remove("active");
+  });
+  if (btnEl) {
+    btnEl.classList.add("active");
+  } else {
+    document.querySelectorAll(`.wa-preset-chip[onclick*="'${presetKey}'"]`).forEach(chip => {
+      chip.classList.add("active");
+    });
+  }
+  window.renderWhatsAppChatQr(presetKey);
+  if (typeof playAudioFeedback === 'function') {
+    playAudioFeedback('click');
+  }
+};
+
+window.openWhatsAppDirectChat = function() {
+  const text = WA_QR_PRESETS[currentWaPreset] || WA_QR_PRESETS.general;
+  const waUrl = `https://wa.me/${WA_PHONE_NUMBER}?text=${encodeURIComponent(text)}`;
+  window.open(waUrl, "_blank");
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("💬 Opening WhatsApp chat (+91 8367047947)...", 2500);
+  }
+};
+
+window.downloadWhatsAppQrCode = function() {
+  const canvas = document.getElementById("whatsapp-chat-qr-canvas");
+  if (!canvas) return;
+  try {
+    const dataUrl = canvas.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = `aaryan_aqua_whatsapp_qr_${currentWaPreset}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("📥 WhatsApp QR Code image downloaded!", 3000);
+    }
+  } catch (e) {
+    console.error("Failed to download WhatsApp QR code:", e);
+  }
+};
+
+window.printWhatsAppPoster = function() {
+  const canvas = document.getElementById("whatsapp-chat-qr-canvas");
+  if (!canvas) return;
+  const qrDataUrl = canvas.toDataURL("image/png");
+
+  const printWindow = window.open("", "_blank", "width=700,height=850");
+  if (!printWindow) {
+    alert("Please allow popups to print the counter stand.");
+    return;
+  }
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Aaryan Aqua Needs - WhatsApp Counter Poster</title>
+      <style>
+        @page { size: A4 portrait; margin: 15mm; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+          margin: 0;
+          padding: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 90vh;
+          background: #ffffff;
+          color: #0f172a;
+          box-sizing: border-box;
+        }
+        .stand-card {
+          width: 100%;
+          max-width: 440px;
+          border: 4px solid #16a34a;
+          border-radius: 24px;
+          padding: 36px 28px;
+          text-align: center;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.06);
+        }
+        .logo-box {
+          margin-bottom: 12px;
+        }
+        .logo-box img {
+          height: 60px;
+          object-fit: contain;
+        }
+        h1 {
+          font-size: 22px;
+          margin: 0 0 4px 0;
+          font-weight: 800;
+          color: #0f172a;
+          letter-spacing: 0.03em;
+        }
+        p.tagline {
+          font-size: 11px;
+          font-weight: 700;
+          color: #16a34a;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          margin: 0 0 20px 0;
+        }
+        .qr-wrapper {
+          display: inline-block;
+          background: #ffffff;
+          border: 2px solid #bbf7d0;
+          border-radius: 16px;
+          padding: 16px;
+          margin-bottom: 18px;
+          box-shadow: 0 4px 14px rgba(22, 163, 74, 0.1);
+        }
+        .qr-wrapper img {
+          display: block;
+          width: 240px;
+          height: 240px;
+        }
+        .instruction {
+          font-size: 17px;
+          font-weight: 800;
+          color: #15803d;
+          margin: 0 0 6px 0;
+        }
+        .sub-instruction {
+          font-size: 12px;
+          color: #64748b;
+          margin: 0 0 18px 0;
+        }
+        .phone-badge {
+          display: inline-block;
+          background: #f0fdf4;
+          border: 1px solid #86efac;
+          border-radius: 8px;
+          padding: 6px 16px;
+          font-family: monospace;
+          font-size: 14px;
+          font-weight: 800;
+          color: #166534;
+        }
+        .features {
+          display: flex;
+          justify-content: center;
+          gap: 12px;
+          margin-top: 14px;
+          font-size: 11px;
+          font-weight: 700;
+          color: #475569;
+        }
+        .footer-note {
+          margin-top: 24px;
+          font-size: 10px;
+          color: #94a3b8;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="stand-card">
+        <div class="logo-box">
+          <img src="rallis_logo.png" alt="Rallis Logo">
+        </div>
+        <h1>AARYAN AQUA NEEDS</h1>
+        <p class="tagline">Quality Products for Better Aquaculture</p>
+        <div class="instruction">💬 Scan &amp; Chat with Us on WhatsApp</div>
+        <div class="sub-instruction">Open any phone camera or WhatsApp scanner to start chatting immediately</div>
+        <div class="qr-wrapper">
+          <img src="${qrDataUrl}" alt="WhatsApp Chat QR Code">
+        </div>
+        <div>
+          <span class="phone-badge">📞 +91 8367047947</span>
+        </div>
+        <div class="features">
+          <span>📦 Product Inquiries</span> • <span>🧾 Instant Billing</span> • <span>💬 Support</span>
+        </div>
+        <div class="footer-note">Official Business WhatsApp • Instant Response</div>
+      </div>
+      <script>
+        window.onload = function() {
+          window.print();
+        };
+      <\/script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+};
 
 window.openWebsiteQrModal = function(initialTab = 'website') {
   const modal = document.getElementById("website-qr-modal");
@@ -10755,6 +10979,9 @@ window.openWebsiteQrModal = function(initialTab = 'website') {
     }
   }
 
+  // Render WhatsApp Chat QR
+  window.renderWhatsAppChatQr(currentWaPreset);
+
   modal.classList.remove("hidden");
   window.switchWebsiteQrTab(initialTab);
 };
@@ -10767,34 +10994,48 @@ window.closeWebsiteQrModal = function() {
 window.switchWebsiteQrTab = function(tabName) {
   const panelWebsite = document.getElementById("qr-panel-website");
   const panelUpi = document.getElementById("qr-panel-upi");
+  const panelWhatsApp = document.getElementById("qr-panel-whatsapp");
   const btnWebsite = document.getElementById("tab-btn-qr-website");
   const btnUpi = document.getElementById("tab-btn-qr-upi");
+  const btnWhatsApp = document.getElementById("tab-btn-qr-whatsapp");
 
-  if (tabName === 'upi') {
-    if (panelWebsite) panelWebsite.classList.add("hidden");
-    if (panelUpi) panelUpi.classList.remove("hidden");
-    if (btnWebsite) {
-      btnWebsite.classList.remove("active");
-      btnWebsite.style.color = "#64748b";
-      btnWebsite.style.borderBottomColor = "transparent";
+  // Reset panels
+  if (panelWebsite) panelWebsite.classList.add("hidden");
+  if (panelUpi) panelUpi.classList.add("hidden");
+  if (panelWhatsApp) panelWhatsApp.classList.add("hidden");
+
+  const resetBtn = (btn) => {
+    if (!btn) return;
+    btn.classList.remove("active");
+    btn.style.color = "#64748b";
+    btn.style.borderBottomColor = "transparent";
+  };
+  resetBtn(btnWebsite);
+  resetBtn(btnUpi);
+  resetBtn(btnWhatsApp);
+
+  if (tabName === 'whatsapp') {
+    if (panelWhatsApp) panelWhatsApp.classList.remove("hidden");
+    if (btnWhatsApp) {
+      btnWhatsApp.classList.add("active");
+      btnWhatsApp.style.color = "#16a34a";
+      btnWhatsApp.style.borderBottomColor = "#16a34a";
     }
+    window.renderWhatsAppChatQr(currentWaPreset);
+  } else if (tabName === 'upi') {
+    if (panelUpi) panelUpi.classList.remove("hidden");
     if (btnUpi) {
       btnUpi.classList.add("active");
       btnUpi.style.color = "#059669";
       btnUpi.style.borderBottomColor = "#059669";
     }
   } else {
+    // Default: website tab
     if (panelWebsite) panelWebsite.classList.remove("hidden");
-    if (panelUpi) panelUpi.classList.add("hidden");
     if (btnWebsite) {
       btnWebsite.classList.add("active");
       btnWebsite.style.color = "#0284c7";
       btnWebsite.style.borderBottomColor = "#0284c7";
-    }
-    if (btnUpi) {
-      btnUpi.classList.remove("active");
-      btnUpi.style.color = "#64748b";
-      btnUpi.style.borderBottomColor = "transparent";
     }
   }
 };

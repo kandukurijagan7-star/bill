@@ -43,7 +43,7 @@
       });
     }
     // Build Version Enforcement: Clears stale caches when new build is deployed
-    window.__APP_BUILD_VERSION__ = "v313_website_qr";
+    window.__APP_BUILD_VERSION__ = "v314_wa_qr";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -57,8 +57,8 @@
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.google.com">
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=313_website_qr">
-  <script src="invoice_utils_v5.js?v=313_website_qr"></script>
+  <link rel="stylesheet" href="index.css?v=314_wa_qr">
+  <script src="invoice_utils_v5.js?v=314_wa_qr"></script>
 </head>
 <body>
 
@@ -159,6 +159,9 @@
         <button type="button" class="nav-item" onclick="openWebsiteQrModal()" title="Website QR Code - Scan to open on mobile">
           <i class="fa-solid fa-qrcode" style="color: #38bdf8;"></i> Website QR Code
         </button>
+        <button type="button" class="nav-item" onclick="openWebsiteQrModal('whatsapp')" title="WhatsApp QR Code - Scan to chat directly">
+          <i class="fa-brands fa-whatsapp" style="color: #22c55e;"></i> WhatsApp QR
+        </button>
       </nav>
 
       <div class="sidebar-profile">
@@ -249,6 +252,9 @@
             </button>
             <button class="btn btn-secondary btn-hero" onclick="openWebsiteQrModal()" title="Website QR Code (Scan to open on phone)">
               <i class="fa-solid fa-qrcode"></i> Website QR
+            </button>
+            <button class="btn btn-secondary btn-hero" onclick="openWebsiteQrModal('whatsapp')" title="WhatsApp QR Code (Scan to chat instantly)">
+              <i class="fa-brands fa-whatsapp" style="color: #16a34a;"></i> WhatsApp QR
             </button>
           </div>
         </div>
@@ -2449,11 +2455,14 @@
 
       <!-- Tab Switcher -->
       <div style="display: flex; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
-        <button type="button" id="tab-btn-qr-website" class="website-qr-tab-btn active" onclick="switchWebsiteQrTab('website')" style="flex: 1; padding: 10px 12px; border: none; background: transparent; font-size: 12.5px; font-weight: 700; color: #0284c7; border-bottom: 2px solid #0284c7; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-          <i class="fa-solid fa-mobile-screen-button"></i> Open on Phone
+        <button type="button" id="tab-btn-qr-website" class="website-qr-tab-btn active" onclick="switchWebsiteQrTab('website')" style="flex: 1; padding: 10px 8px; border: none; background: transparent; font-size: 12px; font-weight: 700; color: #0284c7; border-bottom: 2px solid #0284c7; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px;">
+          <i class="fa-solid fa-mobile-screen-button"></i> Open App
         </button>
-        <button type="button" id="tab-btn-qr-upi" class="website-qr-tab-btn" onclick="switchWebsiteQrTab('upi')" style="flex: 1; padding: 10px 12px; border: none; background: transparent; font-size: 12.5px; font-weight: 600; color: #64748b; border-bottom: 2px solid transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-          <i class="fa-solid fa-indian-rupee-sign"></i> Shop UPI Pay
+        <button type="button" id="tab-btn-qr-whatsapp" class="website-qr-tab-btn" onclick="switchWebsiteQrTab('whatsapp')" style="flex: 1.1; padding: 10px 8px; border: none; background: transparent; font-size: 12px; font-weight: 600; color: #64748b; border-bottom: 2px solid transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px;">
+          <i class="fa-brands fa-whatsapp" style="color: #16a34a; font-size: 14px;"></i> WhatsApp QR
+        </button>
+        <button type="button" id="tab-btn-qr-upi" class="website-qr-tab-btn" onclick="switchWebsiteQrTab('upi')" style="flex: 1; padding: 10px 8px; border: none; background: transparent; font-size: 12px; font-weight: 600; color: #64748b; border-bottom: 2px solid transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px;">
+          <i class="fa-solid fa-indian-rupee-sign"></i> Shop UPI
         </button>
       </div>
 
@@ -2539,6 +2548,68 @@
           <div style="display: flex; gap: 8px;">
             <button type="button" class="btn btn-secondary" onclick="printShopUpiStand()" style="flex: 1; justify-content: center; font-size: 12px;">
               <i class="fa-solid fa-print"></i> Print Payment Stand
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="closeWebsiteQrModal()" style="width: 80px; justify-content: center; font-size: 12px;">
+              Close
+            </button>
+          </div>
+        </div>
+
+        <!-- PANEL 3: WHATSAPP DIRECT CHAT QR -->
+        <div id="qr-panel-whatsapp" class="website-qr-panel hidden">
+          <p style="margin: 0 0 10px 0; font-size: 12px; color: #475569; line-height: 1.4;">
+            Scan with any phone camera or WhatsApp scanner to immediately chat with <strong>Aaryan Aqua Needs</strong>.
+          </p>
+
+          <!-- Verified Number Badge -->
+          <div style="text-align: center; margin-bottom: 12px;">
+            <div style="display: inline-flex; align-items: center; gap: 6px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 20px; padding: 4px 12px; font-size: 11.5px; font-weight: 700; color: #15803d;">
+              <i class="fa-brands fa-whatsapp" style="font-size: 14px; color: #16a34a;"></i>
+              <span id="wa-qr-display-phone">+91 8367047947</span>
+              <i class="fa-solid fa-circle-check" style="color: #16a34a; font-size: 12px;" title="Official Business Contact"></i>
+            </div>
+          </div>
+
+          <!-- QR Canvas -->
+          <div style="display: block; margin: 0 auto 12px auto; width: fit-content; padding: 12px; background: #ffffff; border: 2px solid #16a34a; border-radius: 14px; box-shadow: 0 6px 18px rgba(22, 163, 74, 0.15);">
+            <canvas id="whatsapp-chat-qr-canvas" width="220" height="220" style="width: 200px; height: 200px; display: block; margin: 0 auto;"></canvas>
+            <div style="margin-top: 6px; font-size: 11px; font-weight: 800; color: #15803d; letter-spacing: 0.04em;">
+              <i class="fa-solid fa-comments"></i> 1-CLICK INSTANT CHAT
+            </div>
+          </div>
+
+          <!-- Quick Message Presets -->
+          <div style="margin-bottom: 12px; text-align: left;">
+            <span style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 6px;">Select Quick Message:</span>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+              <button type="button" class="wa-preset-chip active" onclick="selectWhatsAppQrPreset('general', this)">
+                💬 General Inquiry
+              </button>
+              <button type="button" class="wa-preset-chip" onclick="selectWhatsAppQrPreset('catalog', this)">
+                📦 Products &amp; Rates
+              </button>
+              <button type="button" class="wa-preset-chip" onclick="selectWhatsAppQrPreset('bill', this)">
+                🧾 Bill Receipt
+              </button>
+              <button type="button" class="wa-preset-chip" onclick="selectWhatsAppQrPreset('payment', this)">
+                💳 Payment UTR
+              </button>
+            </div>
+          </div>
+
+          <!-- Actions Grid -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <button type="button" class="btn btn-primary" onclick="openWhatsAppDirectChat()" style="background: #16a34a; border-color: #15803d; justify-content: center; font-size: 12.5px;">
+              <i class="fa-brands fa-whatsapp"></i> Open Chat
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="downloadWhatsAppQrCode()" style="justify-content: center; font-size: 12.5px;">
+              <i class="fa-solid fa-download"></i> Save Image
+            </button>
+          </div>
+
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-secondary" onclick="printWhatsAppPoster()" style="flex: 1; justify-content: center; font-size: 12px;">
+              <i class="fa-solid fa-print"></i> Print Counter Poster
             </button>
             <button type="button" class="btn btn-secondary" onclick="closeWebsiteQrModal()" style="width: 80px; justify-content: center; font-size: 12px;">
               Close
@@ -2649,6 +2720,14 @@
           <p id="wa-modal-status-desc" style="margin: 4px 0 0 0; font-size: 12px; color: #475569;">
             Bills &amp; Google Drive PDF links open directly in customer WhatsApp with 1 click. Zero setup needed.
           </p>
+          <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-xs" onclick="closeWhatsAppBotModal(); openWebsiteQrModal('whatsapp');" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+              <i class="fa-solid fa-qrcode"></i> Scan WhatsApp QR Hub
+            </button>
+            <button type="button" class="btn btn-xs" onclick="openWhatsAppDirectChat()" style="background: #f0fdf4; border: 1px solid #86efac; color: #166534; padding: 6px 12px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+              <i class="fa-brands fa-whatsapp"></i> Chat with Us (+91 8367047947)
+            </button>
+          </div>
         </div>
 
         <!-- TAB SWITCHER -->
@@ -3021,6 +3100,14 @@
         <button type="button" class="btn btn-secondary" onclick="closeDatabaseTelemetryModal()" style="padding: 6px 16px; font-size: 12.5px; cursor: pointer;">Close</button>
       </div>
     </div>
+  </div>
+
+  <!-- FLOATING WHATSAPP QR QUICK ACCESS BUTTON -->
+  <div id="floating-whatsapp-btn" class="floating-whatsapp-btn cursor-pointer no-print" onclick="openWebsiteQrModal('whatsapp')" title="Scan WhatsApp QR Code or Chat">
+    <div class="floating-whatsapp-icon">
+      <i class="fa-brands fa-whatsapp"></i>
+    </div>
+    <span class="floating-whatsapp-text">WhatsApp QR</span>
   </div>
 
   <!-- FLOATING KEYBOARD SHORTCUTS BADGE (Bottom Right) -->
@@ -3410,7 +3497,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=313_website_qr"></script>
+  <script src="index_v5.js?v=314_wa_qr"></script>
 </body>
 </html>
 
