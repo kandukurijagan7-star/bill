@@ -5209,13 +5209,14 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       console.warn("Unable to persist invoices:", err);
     }
 
+    let precomputedBase64 = null;
+
     // Non-blocking background worker: generate PDF, upload to Google Drive, Telegram & WhatsApp
     (async () => {
       try {
         if (typeof sendTelegramInvoiceNotification === 'function') sendTelegramInvoiceNotification(invoiceRecord);
       } catch (e) { console.warn("Telegram note:", e); }
 
-      let precomputedBase64 = null;
       try {
         if (typeof generateInvoicePdfBlob === 'function') {
           const pdfRes = await generateInvoicePdfBlob(invoiceRecord.details);
@@ -12386,15 +12387,23 @@ window.submitInvoicePaymentSettlement = function() {
   // Save to database & sync
   if (typeof saveToLocalStorage === "function") saveToLocalStorage();
   if (typeof saveInvoicesToDB === "function") saveInvoicesToDB();
+  if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
+    try { window.AaryanDB.saveInvoice(inv); } catch (e) {}
+  }
+  if (typeof syncDatabaseToServer === 'function') {
+    try { syncDatabaseToServer("invoices", inv); } catch (e) {}
+  }
   if (typeof renderInvoicesTable === "function") renderInvoicesTable();
+  if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
   if (typeof updateDashboardStats === "function") updateDashboardStats();
+  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
 
   // Mesh MQTT Sync
   if (typeof publishMeshDatabaseUpdate === "function") {
     try { publishMeshDatabaseUpdate("invoicesDb", inv); } catch (e) { console.warn(e); }
   }
 
-  // Automatic WhatsApp Receipt Dispatch
+  // Automatic WhatsApp Receipt & Paid PDF Dispatch
   const custPhone = inv.buyerPhone || inv.details?.buyer?.phone || inv.phone || "";
   if (custPhone) {
     const msg = `✅ *Payment Received & Verified!*\n\n` +
@@ -12408,10 +12417,18 @@ window.submitInvoicePaymentSettlement = function() {
     if (typeof dispatchWhatsAppBotMessage === "function") {
       dispatchWhatsAppBotMessage(custPhone, msg);
     }
+
+    setTimeout(() => {
+      if (typeof autoDispatchInvoiceToWhatsApp === "function") {
+        autoDispatchInvoiceToWhatsApp(inv.details || inv);
+      } else if (typeof shareInvoicePdfNative === "function") {
+        shareInvoicePdfNative(inv.details || inv, null, false, null);
+      }
+    }, 1000);
   }
 
-  if (typeof showNotification === "function") {
-    showNotification(`Payment of ₹ ${formatCurrency(settledAmount)} recorded! Invoice #${inv.invoiceNo} is now fully paid.`, "success");
+  if (typeof showFloatingToast === "function") {
+    showFloatingToast(`✅ Payment of ₹ ${formatCurrency(settledAmount)} recorded! Invoice #${inv.invoiceNo} is now fully paid and receipt sent via WhatsApp.`);
   }
 
   // Re-render modal in fully paid state
