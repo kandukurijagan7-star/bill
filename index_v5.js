@@ -91,8 +91,10 @@ let currentInvoice = {
   balanceDue: 0,
   buyer: { name: "", address: "", gstin: "", state: "Andhra Pradesh", stateCode: "37" },
   consignee: { name: "", address: "", gstin: "", state: "Andhra Pradesh", stateCode: "37" },
-  items: []
+  items: [],
+  isEstimate: false
 };
+window.getCurrentInvoice = function() { return currentInvoice; };
 
 // UI Elements mapping
 const elements = {
@@ -2862,6 +2864,28 @@ function updateDashboardOverview() {
       elements.statTotalAmount.textContent = '₹ ' + formatCurrency(totalRevenue);
       elements.statTotalAmount.title = 'Total Gross Billing Volume: ₹ ' + formatCurrency(totalRevenue);
     }
+
+    // Advanced Gross Profit & Margin Analytics Calculation
+    let allInvoicesCost = 0;
+    let allInvoicesTaxable = 0;
+    (invoicesDb || []).forEach(inv => {
+      if (!inv) return;
+      const items = inv.items || inv.details?.items || [];
+      items.forEach(it => {
+        const prod = (productsDb || []).find(p => (it.productId && p.id === it.productId) || ((p.description || '').trim().toLowerCase() === (it.description || '').trim().toLowerCase()));
+        const cPrice = it.costPrice !== undefined ? it.costPrice : (prod?.costPrice || 0);
+        const qty = parseFloat(it.quantity) || 0;
+        const amt = parseFloat(it.amount) || (qty * (parseFloat(it.rate) || 0));
+        allInvoicesCost += (parseFloat(cPrice) || 0) * qty;
+        allInvoicesTaxable += amt;
+      });
+    });
+    const estProfit = Math.max(0, allInvoicesTaxable - allInvoicesCost);
+    const profitPct = allInvoicesTaxable > 0 ? ((estProfit / allInvoicesTaxable) * 100).toFixed(1) : "0";
+    const profitStatEl = document.getElementById("stat-total-profit");
+    const profitPctEl = document.getElementById("stat-profit-pct");
+    if (profitStatEl) profitStatEl.textContent = '₹ ' + formatCurrency(estProfit);
+    if (profitPctEl) profitPctEl.textContent = `${profitPct}%`;
   }
 
   if (elements.statTotalProducts) elements.statTotalProducts.textContent = (productsDb || []).length;
@@ -4143,6 +4167,7 @@ function triggerInvoiceNumberRollbackEffect(oldVal, newVal) {
 }
 
 function autoSuggestInvoiceNo(force = false, preferInvoiceNo = null) {
+  if (currentBillingMode === 'estimate' && !force) return;
   if (currentInvoice && currentInvoice.isEditing && !force) return;
   const nextStr = InvoiceUtils.getNextInvoiceNumber(invoicesDb, { preferInvoiceNo });
   const currentVal = elements.billInvoiceNo ? String(elements.billInvoiceNo.value || "").trim() : "";
@@ -4193,6 +4218,331 @@ function autoSuggestInvoiceNo(force = false, preferInvoiceNo = null) {
     invNoEl.textContent = "#" + (elements.billInvoiceNo.value || "0000");
   }
 }
+
+// --- ADVANCED QUOTATION / ESTIMATE MODE ---
+let currentBillingMode = 'invoice'; // 'invoice' | 'estimate'
+
+window.switchBillingMode = function(mode) {
+  currentBillingMode = mode;
+  const btnInvoice = document.getElementById("billing-mode-btn-invoice");
+  const btnEstimate = document.getElementById("billing-mode-btn-estimate");
+  const badge = document.getElementById("billing-mode-badge");
+  const docTypeSelect = document.getElementById("bill-invoice-type");
+  const saveBtn = document.getElementById("btn-save-generate-invoice");
+
+  if (mode === 'estimate') {
+    currentInvoice.isEstimate = true;
+    if (btnEstimate) {
+      btnEstimate.style.background = "#0891b2";
+      btnEstimate.style.color = "#ffffff";
+      btnEstimate.style.fontWeight = "700";
+    }
+    if (btnInvoice) {
+      btnInvoice.style.background = "transparent";
+      btnInvoice.style.color = "#64748b";
+      btnInvoice.style.fontWeight = "600";
+    }
+    if (badge) {
+      badge.style.background = "#fffbeb";
+      badge.style.color = "#b45309";
+      badge.innerHTML = `<i class="fa-solid fa-file-lines"></i> Quotation / Estimate (Non-Tax)`;
+    }
+    if (docTypeSelect) {
+      docTypeSelect.value = "Proforma Invoice";
+      if (typeof updatePrintTitleHeader === 'function') updatePrintTitleHeader();
+    }
+    if (saveBtn) {
+      saveBtn.innerHTML = `<i class="fa-solid fa-file-signature"></i> Save &amp; Generate Quotation`;
+    }
+    autoSuggestEstimateNo(true);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("📋 Switched to Quotation / Estimate Mode. Not an official tax bill.", 3500);
+    }
+  } else {
+    currentInvoice.isEstimate = false;
+    if (btnInvoice) {
+      btnInvoice.style.background = "#0891b2";
+      btnInvoice.style.color = "#ffffff";
+      btnInvoice.style.fontWeight = "700";
+    }
+    if (btnEstimate) {
+      btnEstimate.style.background = "transparent";
+      btnEstimate.style.color = "#64748b";
+      btnEstimate.style.fontWeight = "600";
+    }
+    if (badge) {
+      badge.style.background = "#ecfdf5";
+      badge.style.color = "#047857";
+      badge.innerHTML = `<i class="fa-solid fa-circle-check"></i> Official GST Sequence`;
+    }
+    if (docTypeSelect) {
+      docTypeSelect.value = "Tax Invoice";
+      if (typeof updatePrintTitleHeader === 'function') updatePrintTitleHeader();
+    }
+    if (saveBtn) {
+      saveBtn.innerHTML = `<i class="fa-solid fa-file-invoice"></i> Generate &amp; Save Invoice (Auto-Send)`;
+    }
+    autoSuggestInvoiceNo(true);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("📄 Switched to Official GST Tax Invoice Mode.", 3500);
+    }
+  }
+};
+
+function autoSuggestEstimateNo(force = false) {
+  const existingEstimates = (invoicesDb || []).filter(i => i.isEstimate || i.details?.isEstimate || String(i.invoiceNo || "").startsWith("EST-"));
+  let maxNum = 0;
+  existingEstimates.forEach(est => {
+    const numPart = String(est.invoiceNo || "").replace(/\D/g, "");
+    const parsed = parseInt(numPart, 10);
+    if (!isNaN(parsed) && parsed > maxNum) maxNum = parsed;
+  });
+  const nextNum = maxNum + 1;
+  const nextStr = "EST-" + nextNum.toString().padStart(4, '0');
+  currentInvoice.invoiceNo = nextStr;
+  currentInvoice.isEstimate = true;
+  if (elements.billInvoiceNo) {
+    elements.billInvoiceNo.value = nextStr;
+  }
+  const invNoEl = document.getElementById("p-bill-invoice-no");
+  if (invNoEl) {
+    invNoEl.textContent = "#" + nextStr;
+  }
+}
+
+window.convertEstimateToInvoice = function(estimateId) {
+  const est = (invoicesDb || []).find(i => i.id === estimateId);
+  if (!est) return;
+
+  // Load into current billing state
+  const details = est.details || est;
+  currentInvoice = JSON.parse(JSON.stringify(details));
+  currentInvoice.isEditing = false;
+  currentInvoice.id = null;
+  currentInvoice.isEstimate = false;
+
+  // Switch billing mode to GST invoice
+  switchBillingMode('invoice');
+  autoSuggestInvoiceNo(true);
+
+  // Sync inputs
+  if (elements.billBuyerName && currentInvoice.buyer) elements.billBuyerName.value = currentInvoice.buyer.name || "";
+  if (elements.billBuyerPhone && currentInvoice.buyer) elements.billBuyerPhone.value = currentInvoice.buyer.phone || "";
+  if (elements.billBuyerAddress && currentInvoice.buyer) elements.billBuyerAddress.value = currentInvoice.buyer.address || "";
+  if (elements.billConsigneeName && currentInvoice.consignee) elements.billConsigneeName.value = currentInvoice.consignee.name || "";
+  if (elements.billConsigneePhone && currentInvoice.consignee) elements.billConsigneePhone.value = currentInvoice.consignee.phone || "";
+
+  calculateSummaryAndTable();
+  if (typeof switchTab === 'function') switchTab('billing');
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`🚀 Quotation #${est.invoiceNo} converted to GST Invoice! Next step: click Generate & Save.`, 5000);
+  }
+};
+
+// --- ADVANCED LIVE BARCODE & QR CAMERA SCANNER ---
+let barcodeCameraStream = null;
+let barcodeCurrentFacing = 'environment'; // 'environment' | 'user'
+let barcodeTorchActive = false;
+let barcodeDetectInterval = null;
+let barcodeDetectorInstance = null;
+
+if ('BarcodeDetector' in window) {
+  try {
+    barcodeDetectorInstance = new BarcodeDetector({
+      formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code']
+    });
+  } catch (e) {
+    console.warn("BarcodeDetector initialization notice:", e);
+  }
+}
+
+window.openBarcodeScannerModal = async function() {
+  const modal = document.getElementById("barcode-scanner-modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+  await startBarcodeCamera();
+};
+
+window.closeBarcodeScannerModal = function() {
+  const modal = document.getElementById("barcode-scanner-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+  stopBarcodeCamera();
+};
+
+async function startBarcodeCamera() {
+  const video = document.getElementById("barcode-scanner-video");
+  const statusEl = document.getElementById("barcode-camera-status");
+  if (!video) return;
+
+  if (statusEl) statusEl.textContent = "Connecting to device camera...";
+
+  try {
+    if (barcodeCameraStream) {
+      stopBarcodeCamera();
+    }
+
+    const constraints = {
+      video: {
+        facingMode: { ideal: barcodeCurrentFacing },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    };
+
+    barcodeCameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = barcodeCameraStream;
+    await video.play();
+
+    if (statusEl) statusEl.textContent = "🟢 Camera active • Point at barcode";
+
+    // Setup active scanning loop
+    if (barcodeDetectInterval) clearInterval(barcodeDetectInterval);
+    barcodeDetectInterval = setInterval(async () => {
+      if (!barcodeCameraStream || video.readyState < 2) return;
+      try {
+        if (barcodeDetectorInstance) {
+          const barcodes = await barcodeDetectorInstance.detect(video);
+          if (barcodes && barcodes.length > 0) {
+            const rawVal = barcodes[0].rawValue;
+            if (rawVal) {
+              window.handleScannedBarcode(rawVal);
+            }
+          }
+        }
+      } catch (err) {
+        // Video processing frame skip
+      }
+    }, 280);
+
+  } catch (err) {
+    console.warn("Camera access warning:", err);
+    if (statusEl) statusEl.textContent = "⚠️ Camera access unavailable. Please type barcode below.";
+  }
+}
+
+function stopBarcodeCamera() {
+  if (barcodeDetectInterval) {
+    clearInterval(barcodeDetectInterval);
+    barcodeDetectInterval = null;
+  }
+  if (barcodeCameraStream) {
+    barcodeCameraStream.getTracks().forEach(track => track.stop());
+    barcodeCameraStream = null;
+  }
+  const video = document.getElementById("barcode-scanner-video");
+  if (video) video.srcObject = null;
+  barcodeTorchActive = false;
+}
+
+window.toggleCameraFacing = async function() {
+  barcodeCurrentFacing = (barcodeCurrentFacing === 'environment') ? 'user' : 'environment';
+  await startBarcodeCamera();
+};
+
+window.toggleCameraTorch = async function() {
+  if (!barcodeCameraStream) return;
+  const track = barcodeCameraStream.getVideoTracks()[0];
+  if (!track) return;
+  try {
+    barcodeTorchActive = !barcodeTorchActive;
+    await track.applyConstraints({
+      advanced: [{ torch: barcodeTorchActive }]
+    });
+    const torchBtn = document.getElementById("btn-camera-torch");
+    if (torchBtn) {
+      torchBtn.style.color = barcodeTorchActive ? "#facc15" : "#ffffff";
+    }
+  } catch (err) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("Torch not supported on this camera.", "info", 2500);
+    }
+  }
+};
+
+window.submitManualBarcode = function() {
+  const input = document.getElementById("manual-barcode-input");
+  if (!input) return;
+  const val = input.value.trim();
+  if (val) {
+    window.handleScannedBarcode(val);
+    input.value = "";
+  }
+};
+
+window.handleScannedBarcode = function(code) {
+  if (!code) return;
+  const clean = String(code).trim();
+
+  // Search product in productsDb
+  let matched = (productsDb || []).find(p => p && p.barcode && String(p.barcode).trim() === clean);
+  if (!matched) {
+    matched = (productsDb || []).find(p => p && (String(p.id) === clean || (p.description && p.description.toLowerCase() === clean.toLowerCase())));
+  }
+
+  window.playScannerBeep();
+
+  if (matched) {
+    window.closeBarcodeScannerModal();
+    if (typeof selectSmartProduct === 'function') {
+      selectSmartProduct(matched);
+    }
+    setTimeout(() => {
+      if (typeof addItemToBillingTable === 'function') {
+        addItemToBillingTable();
+      }
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`📦 Added "${matched.description}" via Barcode Scan!`, 3500);
+      }
+    }, 120);
+  } else {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`⚠️ Barcode: "${clean}" (No matching item in catalog). Add it in Products tab.`, "warning", 4500);
+    }
+  }
+};
+
+window.playScannerBeep = function() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(1760, ctx.currentTime); // 1760Hz crisp POS chime
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.14);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.14);
+  } catch (e) {}
+};
+
+window.generateRandomBarcodeForModal = function() {
+  const prefix = "890"; // GS1 India country code
+  let mid = "";
+  for (let i = 0; i < 9; i++) {
+    mid += Math.floor(Math.random() * 10);
+  }
+  const full12 = prefix + mid;
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    sum += parseInt(full12[i], 10) * (i % 2 === 0 ? 1 : 3);
+  }
+  const check = (10 - (sum % 10)) % 10;
+  const barcode = full12 + check;
+  const input = document.getElementById("modal-prod-barcode");
+  if (input) input.value = barcode;
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`✨ Generated GS1 Barcode: ${barcode}`, 3000);
+  }
+};
 
 window.handlePaymentStatusChange = function() {
   const status = elements.billPaymentStatus.value;
@@ -4536,6 +4886,28 @@ function calculateSummaryAndTable() {
     elements.dueRowContainer.style.display = "none";
   }
 
+  // Calculate and Render Estimated Gross Profit & Margin
+  let totalCost = 0;
+  (currentInvoice.items || []).forEach(it => {
+    const prod = (productsDb || []).find(p => (it.productId && p.id === it.productId) || ((p.description || '').trim().toLowerCase() === (it.description || '').trim().toLowerCase()));
+    const cPrice = it.costPrice !== undefined ? it.costPrice : (prod?.costPrice || 0);
+    totalCost += (parseFloat(cPrice) || 0) * (parseFloat(it.quantity) || 0);
+  });
+  const profitBadge = document.getElementById("billing-profit-badge");
+  const profitAmtEl = document.getElementById("sum-profit-amt");
+  const profitPctEl = document.getElementById("sum-profit-pct");
+  if (profitBadge && profitAmtEl && profitPctEl) {
+    if (totalCost > 0 && taxableVal > 0) {
+      const profit = Math.max(0, taxableVal - totalCost);
+      const margin = ((profit / taxableVal) * 100).toFixed(1);
+      profitAmtEl.textContent = `₹ ${formatCurrency(profit)}`;
+      profitPctEl.textContent = `${margin}%`;
+      profitBadge.style.display = "flex";
+    } else {
+      profitBadge.style.display = "none";
+    }
+  }
+
   // Update Live Metadata Badge in Summary Card
   const docTypeEl = document.getElementById("sum-meta-doc-type");
   if (docTypeEl && elements.billInvoiceType) {
@@ -4800,6 +5172,7 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       transportMode: currentInvoice.transportMode,
       destination: currentInvoice.destination,
       supplyStateCode: currentInvoice.supplyStateCode,
+      isEstimate: !!currentInvoice.isEstimate,
       details: JSON.parse(JSON.stringify(currentInvoice))
     };
 
@@ -5370,7 +5743,7 @@ function populateThermalPrintOverlay(invoice) {
   document.getElementById("th-company-gstin").textContent = company.gstin || "—";
   document.getElementById("th-company-phone").textContent = company.phones || "—";
 
-  document.getElementById("th-document-title").textContent = invoice.invoiceType || "TAX INVOICE";
+  document.getElementById("th-document-title").textContent = invoice.invoiceType || (invoice.isEstimate ? "QUOTATION" : "TAX INVOICE");
   document.getElementById("th-invoice-no").textContent = invoice.invoiceNo;
   document.getElementById("th-invoice-date").textContent = formatInputDateString(invoice.invoiceDate);
   document.getElementById("th-customer-name").textContent = invoice.buyer?.name || "Cash Customer";
@@ -5417,6 +5790,17 @@ function populateThermalPrintOverlay(invoice) {
     document.getElementById("th-due").textContent = `₹ ${formatCurrency(invoice.balanceDue)}`;
   } else {
     if (dueContainer) dueContainer.style.display = "none";
+  }
+
+  // Dynamic UPI Payment QR code for physical thermal slip
+  const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
+  const cName = globalSettings.company?.name || "Aaryan Aqua Needs";
+  const amountToPay = (invoice.balanceDue > 0 ? invoice.balanceDue : (invoice.total || taxableVal)) || 0;
+  const cleanInvNo = String(invoice.invoiceNo || '1').replace(/[^a-zA-Z0-9]/g, '');
+  const upiUrl = `upi://pay?pa=${realUpiId}&pn=${encodeURIComponent(cName.replace(/[^a-zA-Z0-9 ]/g, '').trim())}&am=${amountToPay.toFixed(2)}&cu=INR&tn=Bill${cleanInvNo}`;
+  const qrImg = document.getElementById("th-upi-qr-img");
+  if (qrImg) {
+    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(upiUrl)}`;
   }
 }
 
@@ -7447,9 +7831,14 @@ window.sendWhatsAppPaymentReminder = async function(id, btnEl = null) {
     btnEl.disabled = false;
   }
 
-  showFloatingToast(`⚠️ WhatsApp Bot is offline. Opening WhatsApp Bot Hub to connect...`, "warning", 4500);
-  openWhatsAppBotModal();
-  return false;
+  // Seamless 1-Click WhatsApp Direct Fallback:
+  const encodedText = encodeURIComponent(reminderText);
+  const waDirectUrl = `https://wa.me/${cleanPhone}?text=${encodedText}`;
+  window.open(waDirectUrl, '_blank');
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`📲 Opened WhatsApp Direct with reminder & UPI payment link for +${cleanPhone}!`, 4500);
+  }
+  return true;
 };
 
 window.shareInvoiceToWhatsApp = function(id, btnEl = null) {
@@ -7538,6 +7927,8 @@ window.exportPartiesToCSV = function() {
 window.filterInvoicesByStatus = async function() {
   const statusEl = document.getElementById("filter-history-status");
   const statusFilter = statusEl ? statusEl.value : "all";
+  const typeEl = document.getElementById("filter-history-type");
+  const typeFilter = typeEl ? typeEl.value : "all";
   const query = elements.searchHistoryInput ? elements.searchHistoryInput.value.toLowerCase().trim() : "";
 
   let filtered = [];
@@ -7551,6 +7942,19 @@ window.filterInvoicesByStatus = async function() {
         (inv.customerName && String(inv.customerName).toLowerCase().includes(query))
       );
     }
+  }
+
+  // Filter by document type: 'invoice' vs 'estimate'
+  if (typeFilter === "invoice") {
+    filtered = filtered.filter(inv => {
+      const isEst = Boolean(inv.isEstimate || inv.details?.isEstimate || String(inv.invoiceNo || "").startsWith("EST-"));
+      return !isEst;
+    });
+  } else if (typeFilter === "estimate") {
+    filtered = filtered.filter(inv => {
+      const isEst = Boolean(inv.isEstimate || inv.details?.isEstimate || String(inv.invoiceNo || "").startsWith("EST-"));
+      return isEst;
+    });
   }
 
   if (statusFilter !== "all") {
@@ -7641,6 +8045,7 @@ function renderHistoryTableRows(records) {
 
   records.slice().reverse().forEach(inv => {
     const details = inv.details || {};
+    const isEstimate = Boolean(inv.isEstimate || details.isEstimate || String(inv.invoiceNo || "").startsWith("EST-"));
     const status = details.paymentStatus || 'Paid';
     let badgeClass = 'badge-paid';
     if (status === 'Partial') badgeClass = 'badge-partial';
@@ -7651,10 +8056,17 @@ function renderHistoryTableRows(records) {
     const balance = Math.max(0, total - paid);
 
     let balanceQrBtn = "";
-    if (balance > 0 || status === 'Partial' || status === 'Unpaid') {
+    if (!isEstimate && (balance > 0 || status === 'Partial' || status === 'Unpaid')) {
       balanceQrBtn = `
         <button class="action-btn share" onclick="openBalanceQrModal('${inv.id}')" title="View Balance UPI QR Code (₹ ${formatCurrency(balance)})" style="background: rgba(6, 182, 212, 0.15); color: #06b6d4;"><i class="fa-solid fa-qrcode"></i></button>
         <button class="action-btn share" onclick="sendWhatsAppPaymentReminder('${inv.id}', this)" title="Send 1-Click WhatsApp Payment Reminder (₹ ${formatCurrency(balance)})" style="background: rgba(245, 158, 11, 0.15); color: #d97706;"><i class="fa-solid fa-bell"></i></button>
+      `;
+    }
+
+    let convertEstimateBtn = "";
+    if (isEstimate) {
+      convertEstimateBtn = `
+        <button class="action-btn share" onclick="convertEstimateToInvoice('${inv.id}')" title="Convert to Official GST Invoice" style="background: rgba(8, 145, 178, 0.15); color: #0891b2; font-weight: 700;"><i class="fa-solid fa-file-circle-check"></i></button>
       `;
     }
 
@@ -7670,8 +8082,13 @@ function renderHistoryTableRows(records) {
       <td style="font-weight: 600;">${consigneeDisplay}${subBuyerText}</td>
       <td class="text-center">${inv.itemsCount}</td>
       <td style="text-align: right; font-weight: 700;">₹ ${formatCurrency(inv.total)}</td>
-      <td class="text-center"><span class="badge-status ${badgeClass}">${status}</span></td>
+      <td class="text-center">
+        ${isEstimate 
+          ? `<span class="badge-status" style="background: rgba(245, 158, 11, 0.15); color: #d97706; font-weight: 700; border: 1px solid rgba(245, 158, 11, 0.3);">Quotation</span>` 
+          : `<span class="badge-status ${badgeClass}">${status}</span>`}
+      </td>
       <td class="actions-cell">
+        ${convertEstimateBtn}
         ${balanceQrBtn}
         <button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
         <button class="action-btn print" onclick="printSavedInvoice('${inv.id}')" title="Print A4"><i class="fa-solid fa-print"></i></button>
@@ -7940,6 +8357,11 @@ window.openProductModal = function(id = "") {
       document.getElementById("modal-prod-rate").value = prod.rate;
       document.getElementById("modal-prod-discount").value = prod.discount || 0;
       
+      const costInput = document.getElementById("modal-prod-cost");
+      if (costInput) costInput.value = prod.costPrice !== undefined ? prod.costPrice : "";
+      const barcodeInput = document.getElementById("modal-prod-barcode");
+      if (barcodeInput) barcodeInput.value = prod.barcode || "";
+
       currentEditingExistingStock = Math.max(0, parseInt(prod.stock, 10) || 0);
 
       const existDisp = document.getElementById("modal-existing-stock-display");
@@ -7961,6 +8383,10 @@ window.openProductModal = function(id = "") {
   } else {
     currentEditingExistingStock = 0;
     document.getElementById("product-modal-title").textContent = "Add New Product to Catalog";
+    const costInput = document.getElementById("modal-prod-cost");
+    if (costInput) costInput.value = "";
+    const barcodeInput = document.getElementById("modal-prod-barcode");
+    if (barcodeInput) barcodeInput.value = "";
     if (newStockGroup) newStockGroup.classList.remove("hidden");
     if (editStockGroup) editStockGroup.classList.add("hidden");
   }
@@ -7985,6 +8411,8 @@ window.saveProductModal = function(e) {
   const pack = document.getElementById("modal-prod-pack").value.trim();
   const unit = document.getElementById("modal-prod-unit").value.trim() || "Bucket";
   const rate = parseFloat(document.getElementById("modal-prod-rate").value) || 0;
+  const costPrice = parseFloat(document.getElementById("modal-prod-cost")?.value) || 0;
+  const barcode = (document.getElementById("modal-prod-barcode")?.value || "").trim();
   const disc = parseFloat(document.getElementById("modal-prod-discount").value) || 0;
 
   let oldStock = 0;
@@ -8031,6 +8459,8 @@ window.saveProductModal = function(e) {
     packSize: pack, 
     unit, 
     rate, 
+    costPrice,
+    barcode,
     price: valAfterDisc,
     gstRate: 0, 
     discount: disc, 
@@ -8537,6 +8967,15 @@ window.sendPartyPaymentReminderWhatsApp = async function(partyName, phone) {
   text += `💰 *Total Billed:* ₹ ${formatCurrency(totalBilled)}\n`;
   text += `✅ *Total Paid:* ₹ ${formatCurrency(totalPaid)}\n`;
   text += `🔴 *Outstanding Dues:* ₹ ${formatCurrency(pendingDues)}\n`;
+  const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
+  const companyName = globalSettings.company?.name || "AARYAN AQUA NEEDS";
+  const upiName = encodeURIComponent(companyName.replace(/[^a-zA-Z0-9 ]/g, '').trim());
+  const upiPayLink = `upi://pay?pa=${realUpiId}&pn=${upiName}&am=${pendingDues.toFixed(2)}&cu=INR&tn=PartyDuePayment`;
+
+  text += `-----------------------------------\n`;
+  text += `📲 *Pay Directly via UPI App (GPay / PhonePe / Paytm):*\n`;
+  text += `${upiPayLink}\n\n`;
+  text += `💳 Or send to UPI ID: *${realUpiId}*\n`;
   text += `-----------------------------------\n`;
   text += `Kindly clear the outstanding balance at your earliest convenience. Thank you for your continued business! 🙏`;
 
@@ -8578,8 +9017,17 @@ window.sendPartyPaymentReminderWhatsApp = async function(partyName, phone) {
     }
   }
 
-  showFloatingToast(`⚠️ WhatsApp Bot is offline. Opening WhatsApp Bot Hub to connect...`, "warning", 4500);
-  openWhatsAppBotModal();
+  if (cleanPhone) {
+    const encodedText = encodeURIComponent(text);
+    const waDirectUrl = `https://wa.me/${cleanPhone}?text=${encodedText}`;
+    window.open(waDirectUrl, '_blank');
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`📲 Opened WhatsApp Direct with reminder & UPI payment link for ${partyName}!`, 4500);
+    }
+    return true;
+  }
+
+  showFloatingToast(`⚠️ No valid phone number found for ${partyName}.`, "warning", 4500);
   return false;
 };
 

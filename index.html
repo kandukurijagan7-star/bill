@@ -43,7 +43,7 @@
       });
     }
     // Build Version Enforcement: Clears stale caches when new build is deployed
-    window.__APP_BUILD_VERSION__ = "v316_wa_login_qr";
+    window.__APP_BUILD_VERSION__ = "v317_advanced_suite";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -57,8 +57,8 @@
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.google.com">
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=316_wa_login_qr">
-  <script src="invoice_utils_v5.js?v=316_wa_login_qr"></script>
+  <link rel="stylesheet" href="index.css?v=317_advanced_suite">
+  <script src="invoice_utils_v5.js?v=317_advanced_suite"></script>
 </head>
 <body>
 
@@ -288,6 +288,17 @@
               <span class="stat-trend text-purple"><i class="fa-solid fa-user-check"></i> Registered Clients</span>
             </div>
           </div>
+
+          <div class="stat-card">
+            <div class="stat-icon bg-emerald-light" style="background: rgba(16, 185, 129, 0.12);">
+              <i class="fa-solid fa-chart-line" style="color: #10b981;"></i>
+            </div>
+            <div class="stat-details">
+              <span class="stat-label">EST. GROSS PROFIT</span>
+              <h3 id="stat-total-profit">₹ 0.00</h3>
+              <span class="stat-trend text-green" id="stat-profit-margin-trend"><i class="fa-solid fa-arrow-trend-up"></i> <span id="stat-profit-pct">0%</span> Margin</span>
+            </div>
+          </div>
         </div>
 
         <!-- Live Analytics & Revenue Charts Grid -->
@@ -395,6 +406,28 @@
           <!-- LEFT FORM CONTAINER (75%) -->
           <div class="billing-form-wrapper">
             
+            <!-- BILLING MODE TOGGLE (GST Tax Invoice vs Quotation/Estimate) -->
+            <div id="billing-mode-container" style="display: flex; align-items: center; justify-content: space-between; background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 8px 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-wrap: wrap; gap: 8px;">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <div id="billing-mode-btn-group" style="display: flex; background: #f1f5f9; padding: 3px; border-radius: 8px;">
+                  <button type="button" id="billing-mode-btn-invoice" class="btn btn-xs active-mode-btn" onclick="switchBillingMode('invoice')" style="font-weight: 700; font-size: 11.5px; border-radius: 6px; padding: 6px 12px; border: none; background: #0891b2; color: #ffffff; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                    <i class="fa-solid fa-file-invoice-dollar"></i> GST Tax Invoice
+                  </button>
+                  <button type="button" id="billing-mode-btn-estimate" class="btn btn-xs" onclick="switchBillingMode('estimate')" style="font-weight: 600; font-size: 11.5px; border-radius: 6px; padding: 6px 12px; border: none; background: transparent; color: #64748b; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                    <i class="fa-solid fa-file-signature"></i> Quotation / Estimate
+                  </button>
+                </div>
+                <span id="billing-mode-badge" style="font-size: 11px; padding: 3px 8px; border-radius: 12px; font-weight: 700; background: #ecfdf5; color: #047857; display: inline-flex; align-items: center; gap: 4px;">
+                  <i class="fa-solid fa-circle-check"></i> Official GST Sequence
+                </span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <button type="button" class="btn btn-xs" onclick="openBarcodeScannerModal()" style="background: #f8fafc; border: 1px solid #cbd5e1; color: #0891b2; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" title="Scan product barcode with camera">
+                  <i class="fa-solid fa-camera"></i> <i class="fa-solid fa-barcode"></i> Scan Barcode
+                </button>
+              </div>
+            </div>
+
             <!-- Section 1: Invoice details -->
             <div class="billing-card-form">
               <div class="form-grid">
@@ -556,7 +589,12 @@
                 <div class="form-group flex-item-desc smart-combo-group" style="position: relative;">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                     <label style="margin: 0;">PRODUCT / ITEM</label>
-                    <span class="kbd-hint-tag" title="Keyboard Shortcut: Alt + P"><kbd>Alt+P</kbd></span>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                      <button type="button" class="btn-scan-barcode-picker" onclick="openBarcodeScannerModal()" title="Scan product barcode with camera" style="background: rgba(8,145,178,0.12); color: #0891b2; border: 1px solid rgba(8,145,178,0.3); border-radius: 4px; padding: 2px 7px; font-size: 10.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                        <i class="fa-solid fa-camera"></i> <i class="fa-solid fa-barcode"></i> Scan
+                      </button>
+                      <span class="kbd-hint-tag" title="Keyboard Shortcut: Alt + P"><kbd>Alt+P</kbd></span>
+                    </div>
                   </div>
                   
                   <div class="smart-picker-container" id="smart-picker-container">
@@ -871,6 +909,12 @@
                   <span id="sum-grand-words">Rupees Only</span>
                 </div>
 
+                <!-- LIVE ESTIMATED PROFIT MARGIN (Admin reference) -->
+                <div id="billing-profit-badge" style="display: none; align-items: center; justify-content: space-between; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 6px 12px; margin-top: 8px; font-size: 11.5px; color: #166534;">
+                  <span><i class="fa-solid fa-arrow-trend-up text-success"></i> Est. Profit Margin:</span>
+                  <strong id="sum-profit-amt" style="font-weight: 700; color: #15803d;">₹ 0.00 (<span id="sum-profit-pct">0%</span>)</strong>
+                </div>
+
                 <div class="summary-actions-grid margin-top-15">
                   <!-- Button 1: Save & Generate Invoice (Saves to history, syncs Google Sheets & auto-dispatches in background) -->
                   <button type="button" class="btn btn-primary btn-generate-a4" id="btn-save-generate-invoice" onclick="saveAndGenerateInvoiceOnly(this)" style="background: linear-gradient(135deg, #059669 0%, #0f172a 100%);">
@@ -915,6 +959,11 @@
           <div class="card-box-header" style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
             <h3>Invoice History (<span id="history-count">3</span>)</h3>
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <select id="filter-history-type" onchange="filterInvoicesByStatus()" style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg, #0f172a); color: var(--text-color, #f8fafc); font-size: 13px; cursor: pointer;">
+                <option value="all">All Document Types</option>
+                <option value="invoice">GST Invoices Only</option>
+                <option value="estimate">Quotations / Estimates</option>
+              </select>
               <select id="filter-history-status" onchange="filterInvoicesByStatus()" style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg, #0f172a); color: var(--text-color, #f8fafc); font-size: 13px; cursor: pointer;">
                 <option value="all">All Payment Statuses</option>
                 <option value="Paid">Paid Only</option>
@@ -1801,12 +1850,25 @@
           <input type="text" id="modal-prod-unit" placeholder="e.g. Bucket" value="Bucket">
         </div>
         <div class="form-group">
-          <label for="modal-prod-rate">Rate (₹)</label>
+          <label for="modal-prod-rate">Selling Rate (₹)</label>
           <input type="number" step="0.01" id="modal-prod-rate" required placeholder="3599.00" oninput="calculateProductModalValues()">
+        </div>
+        <div class="form-group">
+          <label for="modal-prod-cost">Cost / Purchase Rate (₹)</label>
+          <input type="number" step="0.01" id="modal-prod-cost" placeholder="e.g. 2800.00" oninput="calculateProductModalValues()">
         </div>
         <div class="form-group">
           <label for="modal-prod-discount">Default Discount (%)</label>
           <input type="number" step="0.01" id="modal-prod-discount" value="0" oninput="calculateProductModalValues()">
+        </div>
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label for="modal-prod-barcode" style="margin: 0;">Barcode / SKU</label>
+            <button type="button" onclick="generateRandomBarcodeForModal()" style="border: none; background: none; color: #0891b2; font-size: 10.5px; font-weight: 700; cursor: pointer; padding: 0;">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Auto Generate
+            </button>
+          </div>
+          <input type="text" id="modal-prod-barcode" placeholder="e.g. 8901234567890">
         </div>
         <!-- Real-World Business Stock Management System -->
         <div id="modal-stock-section" class="col-12 stock-management-card">
@@ -2362,9 +2424,71 @@
         <div class="flex-between font-size-11 font-weight-bold text-rose" id="th-due-container"><span>Balance Due:</span><span id="th-due">₹ 0.00</span></div>
       </div>
       <hr class="thermal-divider">
+      <!-- DYNAMIC UPI QR PAYMENT CODE ON RECEIPT -->
+      <div id="th-upi-qr-container" style="text-align: center; margin: 8px 0;">
+        <img id="th-upi-qr-img" src="" alt="UPI QR Code" style="width: 100px; height: 100px; object-fit: contain; margin: 0 auto 4px auto; display: block;">
+        <p style="font-size: 9px; color: #333333; margin: 0; font-weight: 700;">Scan &amp; Pay via UPI (GPay / PhonePe / Paytm)</p>
+      </div>
+      <hr class="thermal-divider">
       <div class="thermal-footer text-center small-text">
         <p>Thank you for your business!</p>
         <p>Aaryan Aqua Needs - Repalle</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIVE BARCODE & QR CAMERA SCANNER MODAL -->
+  <div id="barcode-scanner-modal" class="modal-overlay hidden no-print" onclick="if(event.target === this) closeBarcodeScannerModal();" style="z-index: 2147483647;">
+    <div class="modal-box" style="max-width: 440px; width: 92%; background: #0f172a; color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6);">
+      <div class="modal-header" style="background: #1e293b; color: #ffffff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="width: 34px; height: 34px; background: rgba(8,145,178,0.2); color: #06b6d4; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px;">
+            <i class="fa-solid fa-barcode"></i>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #ffffff;">Barcode &amp; QR Scanner</h3>
+            <span style="font-size: 11px; color: #94a3b8;">Point camera at product barcode</span>
+          </div>
+        </div>
+        <button type="button" class="modal-close-btn" onclick="closeBarcodeScannerModal()" aria-label="Close" style="color: #cbd5e1; background: rgba(255,255,255,0.1); border: none; font-size: 18px; cursor: pointer; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      
+      <div class="modal-body" style="padding: 16px; text-align: center;">
+        <!-- Video Viewfinder Container with Targeting Reticle -->
+        <div style="position: relative; width: 100%; height: 260px; background: #020617; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+          <video id="barcode-scanner-video" playsinline autoplay muted style="width: 100%; height: 100%; object-fit: cover;"></video>
+          
+          <!-- Targeting Reticle & Laser Scan Line -->
+          <div style="position: absolute; width: 75%; height: 60%; border: 2px solid #06b6d4; border-radius: 12px; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);">
+            <div id="barcode-laser-line" style="position: absolute; top: 0; left: 0; right: 0; height: 2px; background: #06b6d4; box-shadow: 0 0 8px #06b6d4;"></div>
+          </div>
+          
+          <!-- Camera Status Overlay -->
+          <div id="barcode-camera-status" style="position: absolute; bottom: 8px; left: 8px; right: 8px; font-size: 11px; background: rgba(0,0,0,0.7); padding: 5px 8px; border-radius: 6px; color: #cbd5e1;">
+            Initializing camera...
+          </div>
+        </div>
+
+        <!-- Controls: Flip Camera / Torch -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 8px;">
+          <button type="button" class="btn btn-sm" onclick="toggleCameraTorch()" id="btn-camera-torch" style="flex: 1; background: #334155; color: #ffffff; border: none; border-radius: 8px; padding: 8px; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
+            <i class="fa-solid fa-lightbulb"></i> Torch
+          </button>
+          <button type="button" class="btn btn-sm" onclick="toggleCameraFacing()" id="btn-camera-flip" style="flex: 1; background: #334155; color: #ffffff; border: none; border-radius: 8px; padding: 8px; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
+            <i class="fa-solid fa-camera-rotate"></i> Flip Camera
+          </button>
+        </div>
+
+        <!-- Manual Barcode Input Fallback -->
+        <div style="margin-top: 14px; text-align: left; background: #1e293b; padding: 10px 12px; border-radius: 10px;">
+          <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">Or enter barcode / SKU manually:</label>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="manual-barcode-input" placeholder="Type or scan barcode numbers..." style="flex: 1; background: #0f172a; border: 1px solid #475569; color: white; border-radius: 6px; padding: 6px 10px; font-size: 12px; outline: none;" onkeydown="if(event.key === 'Enter'){ submitManualBarcode(); }">
+            <button type="button" class="btn btn-sm btn-cyan" onclick="submitManualBarcode()" style="padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer;">Add</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -3460,7 +3584,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=316_wa_login_qr"></script>
+  <script src="index_v5.js?v=317_advanced_suite"></script>
 </body>
 </html>
 
