@@ -6477,7 +6477,8 @@ async function fetchWhatsAppBotStatus() {
     updateWhatsAppBotPillUI(whatsappBotStatus);
     updateWhatsAppBotModalUI(whatsappBotStatus);
   } catch (err) {
-    if (realtimeMeshClient && realtimeMeshClient.connected) {
+    // Only request status via MQTT if not already connected (reduces MQTT spam when on Netlify)
+    if (realtimeMeshClient && realtimeMeshClient.connected && (!whatsappBotStatus || whatsappBotStatus.status !== 'CONNECTED')) {
       try {
         realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({ command: 'get_status' }));
       } catch (me) {}
@@ -6714,8 +6715,8 @@ function updateWhatsAppBotModalUI(data) {
     startWhatsAppQrCountdown(data.qrExpiresInSec || 25);
     switchWhatsAppPairTab('bot');
   } 
-  // 4. QR EXPIRED STATE
-  else if (data && (data.status === "QR_EXPIRED" || data.isQrExpired)) {
+  // 4. QR EXPIRED STATE (only when NOT connected)
+  else if (data && data.status !== "CONNECTED" && (data.status === "QR_EXPIRED" || data.isQrExpired)) {
     if (statusCard) {
       statusCard.style.background = "#fff1f2";
       statusCard.style.borderColor = "#fecdd3";
@@ -7219,13 +7220,16 @@ function _openWhatsAppBotModalActual() {
     }
   }
 
-  if (whatsappBotStatus && whatsappBotStatus.status === "QR_READY" && whatsappBotStatus.qrCodeDataUrl) {
+  // Immediately render current known status (CONNECTED, QR_READY, etc.)
+  if (whatsappBotStatus && whatsappBotStatus.status) {
+    updateWhatsAppBotPillUI(whatsappBotStatus);
     updateWhatsAppBotModalUI(whatsappBotStatus);
   }
 
   fetchWhatsAppBotStatus();
   if (whatsappPollInterval) clearInterval(whatsappPollInterval);
-  whatsappPollInterval = setInterval(fetchWhatsAppBotStatus, 2000);
+  // Poll every 4s instead of 2s to reduce MQTT spam from Netlify
+  whatsappPollInterval = setInterval(fetchWhatsAppBotStatus, 4000);
   switchWhatsAppPairTab('bot');
 }
 

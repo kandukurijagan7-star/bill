@@ -452,7 +452,9 @@ async function initClient(options = {}) {
       console.log('🔐 Authenticated successfully!');
       status = 'AUTHENTICATING';
       qrCodeDataUrl = null;
+      rawQr = null;
       pairingCode = null;
+      qrTimestamp = null;
       isInitializing = false;
       broadcastStatus();
     });
@@ -461,7 +463,9 @@ async function initClient(options = {}) {
       console.log('🎉 WhatsApp Bot is Ready and Connected!');
       status = 'CONNECTED';
       qrCodeDataUrl = null;
+      rawQr = null;
       pairingCode = null;
+      qrTimestamp = null;
       isInitializing = false;
       const me = client.info || {};
       clientInfo = {
