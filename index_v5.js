@@ -447,6 +447,7 @@ function initRealtimeMeshSync() {
           const waData = JSON.parse(message.toString());
           if (waData && typeof waData === 'object') {
             whatsappBotStatus = waData;
+            saveWaStatusCache(waData);
             updateWhatsAppBotPillUI(whatsappBotStatus);
             updateWhatsAppBotModalUI(whatsappBotStatus);
           }
@@ -1727,6 +1728,7 @@ function initializeApp() {
   setupKeyboardShortcuts();
 
   // Initialize WhatsApp background bot real-time status monitor (SSE + Adaptive Fast Poll)
+  if (typeof updateWhatsAppBotPillUI === 'function') updateWhatsAppBotPillUI(whatsappBotStatus);
   fetchWhatsAppBotStatus();
   initWhatsAppEventSource();
 
@@ -6403,7 +6405,23 @@ function getCustomerPhoneNumber(details) {
 }
 
 // --- WHATSAPP BOT STATE & CONTROLLER ---
-let whatsappBotStatus = { status: 'DISCONNECTED', isReady: false, qrCodeDataUrl: null, clientInfo: null };
+let cachedWaStatus = null;
+try {
+  cachedWaStatus = JSON.parse(localStorage.getItem('wa_bot_status_cache') || 'null');
+} catch (e) {}
+
+let whatsappBotStatus = (cachedWaStatus && cachedWaStatus.status === 'CONNECTED')
+  ? cachedWaStatus
+  : { status: 'DISCONNECTED', isReady: false, qrCodeDataUrl: null, clientInfo: null };
+
+function saveWaStatusCache(data) {
+  if (data && data.status === 'CONNECTED') {
+    try { localStorage.setItem('wa_bot_status_cache', JSON.stringify(data)); } catch (e) {}
+  } else if (data && data.status === 'DISCONNECTED') {
+    try { localStorage.removeItem('wa_bot_status_cache'); } catch (e) {}
+  }
+}
+
 let whatsappPollInterval = null;
 let whatsappEventSource = null;
 let whatsappAdaptiveTimer = null;
@@ -6476,9 +6494,12 @@ async function fetchWhatsAppBotStatus() {
     clearTimeout(timeoutId);
     if (!res.ok) throw new Error('Status not ok');
     const data = await res.json();
-    whatsappBotStatus = data || { status: 'DISCONNECTED', isReady: false, webDirect: true };
-    updateWhatsAppBotPillUI(whatsappBotStatus);
-    updateWhatsAppBotModalUI(whatsappBotStatus);
+    if (data && data.status) {
+      whatsappBotStatus = data;
+      saveWaStatusCache(data);
+      updateWhatsAppBotPillUI(whatsappBotStatus);
+      updateWhatsAppBotModalUI(whatsappBotStatus);
+    }
   } catch (err) {
     // Only request status via MQTT if not already connected (reduces MQTT spam when on Netlify)
     if (realtimeMeshClient && realtimeMeshClient.connected && (!whatsappBotStatus || whatsappBotStatus.status !== 'CONNECTED')) {
@@ -7515,21 +7536,7 @@ async function generateInvoicePdfBlob(details) {
   return { blob, pdfBase64, filename };
 }
 
-// Automatic Silent WhatsApp Dispatch upon bill generation (100% Automated Backend Process, NO Browser Redirect)
-async function autoDispatchInvoiceToWhatsApp(details, precomputedBase64 = null) {
-  if (!details || !details.invoiceNo) return false;
-  const recipientsInfo = typeof getInvoiceRecipients === 'function'
-    ? getInvoiceRecipients(details)
-    : { allRecipients: [{ clean: formatWhatsAppPhone(getCustomerPhoneNumber(details)), label: 'Consignee', type: 'consignee' }] };
-
-  if (!recipientsInfo.allRecipients || recipientsInfo.allRecipients.length === 0) {
-    console.log("No valid phone number for auto WhatsApp dispatch");
-    return false;
-  }
-
-  const text = typeof generateWhatsAppInvoiceMessage === 'function'
-    ? generateWhatsAppInvoiceMessage(details)
-    : formatInvoiceWhatsAppSummary(details);
+// Helper Functions for Dual-Mode Dispatch (Local HTTP + EMQX Cloud Mesh Relay)
 async function dispatchWhatsAppBotInvoice({ phone, text, filename, pdfBase64 }) {
   if (!phone) return false;
   const cleanPhone = formatWhatsAppPhone(phone);
@@ -7620,7 +7627,8 @@ async function dispatchWhatsAppBotMessage({ phone, text }) {
   return false;
 }
 
-async function autoDispatchInvoiceToWhatsApp(details, text, precomputedBase64 = null) {
+// Automatic Silent WhatsApp Dispatch upon bill generation (100% Automated Backend Process, NO Browser Redirect)
+async function autoDispatchInvoiceToWhatsApp(details, text = null, precomputedBase64 = null) {
   if (!details) return false;
   const recipientsInfo = typeof getInvoiceRecipients === 'function'
     ? getInvoiceRecipients(details)
