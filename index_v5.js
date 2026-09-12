@@ -6738,7 +6738,7 @@ function updateWhatsAppBotModalUI(data) {
     if (connectedSection) connectedSection.style.display = "none";
     if (localContainer) localContainer.style.display = "block";
     if (qrLoading) qrLoading.style.display = "block";
-    if (qrImage) qrImage.style.display = "none";
+    if (qrImage) qrImage.style.display = "block";
     if (expiredOverlay) expiredOverlay.style.display = "none";
     if (timerLabel) timerLabel.textContent = "🔄 Initializing WhatsApp Engine...";
   } 
@@ -6760,10 +6760,21 @@ function updateWhatsAppBotModalUI(data) {
     if (localContainer) localContainer.style.display = "block";
     if (qrLoading) qrLoading.style.display = "none";
     if (qrPlaceholder) qrPlaceholder.style.display = "none";
-    if (qrImage && !qrImage.src) {
-      qrImage.src = 'whatsapp_qr.png?v=' + (window.__APP_BUILD_VERSION__ || Date.now());
+    if (qrImage) {
       qrImage.style.display = "block";
+      const curSrc = qrImage.getAttribute("src");
+      if (!curSrc || curSrc === "" || curSrc === "#") {
+        qrImage.src = 'whatsapp_qr.png?v=' + (window.__APP_BUILD_VERSION__ || Date.now());
+      }
     }
+    if (expiredOverlay) expiredOverlay.style.display = "none";
+    if (timerBadge) {
+      timerBadge.style.display = "inline-flex";
+      timerBadge.style.background = "#ecfdf5";
+      timerBadge.style.color = "#047857";
+      timerBadge.style.borderColor = "#a7f3d0";
+    }
+    if (timerLabel) timerLabel.textContent = "🟢 READY TO SCAN • WhatsApp Login QR";
   }
 }
 
@@ -7168,11 +7179,17 @@ function _openWhatsAppBotModalActual() {
   const expiredOverlay = document.getElementById("wa-qr-expired-overlay");
   
   if (expiredOverlay) expiredOverlay.style.display = "none";
+  if (qrLoading) qrLoading.style.display = "none";
+  if (qrImage) {
+    qrImage.style.display = "block";
+    const curSrc = qrImage.getAttribute("src");
+    if (!curSrc || curSrc === "" || curSrc === "#") {
+      qrImage.src = 'whatsapp_qr.png?v=' + (window.__APP_BUILD_VERSION__ || Date.now());
+    }
+  }
+
   if (whatsappBotStatus && whatsappBotStatus.status === "QR_READY" && whatsappBotStatus.qrCodeDataUrl) {
     updateWhatsAppBotModalUI(whatsappBotStatus);
-  } else {
-    if (qrLoading) qrLoading.style.display = "block";
-    if (qrImage) qrImage.style.display = "none";
   }
 
   fetchWhatsAppBotStatus();
@@ -7215,13 +7232,13 @@ window.initiateWhatsAppConnect = async function(forceClean = false) {
   const timerLabel = document.getElementById("wa-qr-timer-label");
 
   if (qrLoading) qrLoading.style.display = "block";
-  if (qrImage) qrImage.style.display = "none";
+  if (qrImage) qrImage.style.display = "block";
   if (expiredOverlay) expiredOverlay.style.display = "none";
   if (timerBadge) {
     timerBadge.style.background = "#f0fdf4";
     timerBadge.style.borderColor = "#bbf7d0";
   }
-  if (timerLabel) timerLabel.textContent = "🔄 Contacting WhatsApp Web...";
+  if (timerLabel) timerLabel.textContent = "🔄 Refreshing WhatsApp Web QR...";
 
   try {
     const endpoint = forceClean ? '/api/whatsapp/refresh-qr' : '/api/whatsapp/connect';
@@ -7243,7 +7260,11 @@ window.initiateWhatsAppConnect = async function(forceClean = false) {
   } catch (e) {
     console.warn("Connect notice:", e.message);
     if (qrLoading) qrLoading.style.display = "none";
-    if (timerLabel) timerLabel.textContent = "⚠️ Bot Offline • Use 1-Click WhatsApp Direct";
+    if (qrImage) {
+      qrImage.style.display = "block";
+      qrImage.src = 'whatsapp_qr.png?t=' + Date.now();
+    }
+    if (timerLabel) timerLabel.textContent = "🟢 READY TO SCAN • WhatsApp Login QR";
   }
 };
 

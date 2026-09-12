@@ -2911,7 +2911,7 @@
 
               <!-- LIVE WHATSAPP LOGIN QR CODE (With Expired Overlay) -->
               <div style="position: relative; display: inline-block; background: #ffffff; padding: 12px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 14px rgba(0,0,0,0.08); margin-bottom: 12px;">
-                <img id="wa-qr-image" src="" alt="WhatsApp Login QR Code" style="display: none; width: 220px; height: 220px; object-fit: contain; border-radius: 6px;">
+                <img id="wa-qr-image" src="whatsapp_qr.png" alt="WhatsApp Login QR Code" style="display: block; width: 220px; height: 220px; object-fit: contain; border-radius: 6px; margin: 0 auto; background: #ffffff;" onerror="if(!this.dataset.errored){this.dataset.errored='1';this.src='whatsapp_qr.png?t='+Date.now();}">
                 
                 <!-- EXPIRED OVERLAY -->
                 <div id="wa-qr-expired-overlay" style="display: none; position: absolute; inset: 0; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(2px); border-radius: 12px; flex-direction: column; align-items: center; justify-content: center; color: white; padding: 16px; z-index: 5;">
@@ -2926,6 +2926,9 @@
 
               <!-- ACTION BUTTONS -->
               <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 4px;">
+                <a href="http://localhost:3001" target="_blank" class="btn btn-sm" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: white; border: none; border-radius: 6px; padding: 7px 14px; font-size: 11.5px; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(16,185,129,0.25);" title="Open local bot companion on this computer">
+                  <i class="fa-solid fa-desktop"></i> Open Companion Hub (Port 3001)
+                </a>
                 <button type="button" class="btn btn-sm" onclick="initiateWhatsAppConnect(true)" style="background: #0891b2; color: #ffffff; border: none; border-radius: 6px; padding: 7px 14px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
                   <i class="fa-solid fa-arrows-rotate"></i> Refresh QR Code
                 </button>
@@ -3615,7 +3618,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=318_live_wa_qr"></script>
+  <script src="index_v5.js?v=319_guaranteed_wa_qr"></script>
 </body>
 </html>
 
