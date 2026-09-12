@@ -5734,7 +5734,7 @@ function populateA4PrintOverlay(invoice) {
   const verifyQrImg = document.getElementById("p-print-verify-qr-img");
   if (verifyQrImg) {
     const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
-      ? window.getInvoiceVerificationUrl(invoice.invoiceNo)
+      ? window.getInvoiceVerificationUrl(invoice.invoiceNo, invoice)
       : `https://aaryanaqua.netlify.app/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
     verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(verifyUrl)}`;
   }
@@ -5810,11 +5810,11 @@ function populateThermalPrintOverlay(invoice) {
   const cName = globalSettings.company?.name || "Aaryan Aqua Needs";
   const amountToPay = (invoice.balanceDue > 0 ? invoice.balanceDue : (invoice.total || taxableVal)) || 0;
   const cleanInvNo = String(invoice.invoiceNo || '1').replace(/[^a-zA-Z0-9]/g, '');
-  const upiUrl = `upi://pay?pa=${realUpiId}&pn=${encodeURIComponent(cName.replace(/[^a-zA-Z0-9 ]/g, '').trim())}&am=${amountToPay.toFixed(2)}&cu=INR&tn=Bill${cleanInvNo}`;
+  const upiUrl = `upi://pay?pa=${realUpiId}&pn=${encodeURIComponent(cName.replace(/[^a-zA-Z0-9 ]/g, '').trim())}&am=${amountToPay.toFixed(2)}&cu=INR&tn=Bill${cleanInvStr || cleanInvNo}`;
   const qrImg = document.getElementById("th-upi-qr-img");
   if (qrImg) {
     const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
-      ? window.getInvoiceVerificationUrl(invoice.invoiceNo)
+      ? window.getInvoiceVerificationUrl(invoice.invoiceNo, invoice)
       : `https://aaryanaqua.netlify.app/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
     qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}`;
   }
@@ -7916,7 +7916,11 @@ window.shareCurrentInvoiceWhatsApp = function(btnEl = null) {
 let currentBalanceQrInv = null;
 
 window.openBalanceQrModal = function(id) {
-  const inv = invoicesDb.find(i => i.id === id);
+  const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => i.id === id || i.invoiceNo === id);
+  if (inv && typeof openInvoiceVerificationModal === "function") {
+    openInvoiceVerificationModal(inv.invoiceNo || inv.id);
+    return;
+  }
   if (!inv) return;
   const details = inv.details || {};
   const total = parseFloat(inv.total || 0);
@@ -12110,25 +12114,74 @@ window.printShopUpiStand = function() {
 // --- SMART INVOICE VERIFICATION & PAYMENT SYSTEM ---
 window.currentVerifiedInvoiceNo = null;
 
-window.getInvoiceVerificationUrl = function(invoiceNo) {
+window.getInvoiceVerificationUrl = function(invoiceNo, invoiceObj = null) {
   const baseUrl = (window.location.origin && !window.location.origin.includes("file://"))
     ? window.location.origin
     : "https://aaryanaqua.netlify.app";
-  return `${baseUrl}/?verify_invoice=${encodeURIComponent(invoiceNo || '')}`;
+  
+  const cleanNo = String(invoiceNo || '').trim();
+  let url = `${baseUrl}/?verify_invoice=${encodeURIComponent(cleanNo)}`;
+
+  if (invoiceObj) {
+    const details = invoiceObj.details || invoiceObj;
+    const cust = invoiceObj.buyerName || details.buyer?.name || invoiceObj.customerName || '';
+    const phone = details.buyer?.phone || invoiceObj.phone || invoiceObj.customerPhone || '';
+    const total = invoiceObj.total || details.total || 0;
+    const paid = invoiceObj.paidAmount !== undefined ? invoiceObj.paidAmount : (invoiceObj.status === 'Paid' ? total : 0);
+    const bal = invoiceObj.balanceDue !== undefined ? invoiceObj.balanceDue : Math.max(0, total - paid);
+    const dt = invoiceObj.invoiceDate || details.invoiceDate || invoiceObj.date || '';
+
+    url += `&cust=${encodeURIComponent(cust)}&ph=${encodeURIComponent(phone)}&tot=${total}&paid=${paid}&bal=${bal}&dt=${encodeURIComponent(dt)}`;
+  }
+  return url;
 };
 
 window.openInvoiceVerificationModal = function(invoiceNo) {
   const modal = document.getElementById("invoice-verification-modal");
   if (!modal) return;
 
-  const cleanNo = String(invoiceNo || "").trim();
+  const urlParams = new URLSearchParams(window.location.search);
+  const cleanNo = String(invoiceNo || urlParams.get("verify_invoice") || urlParams.get("invoice") || "").trim();
   window.currentVerifiedInvoiceNo = cleanNo;
 
-  // Search in invoicesDb
-  const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
+  // 1. Search in invoicesDb
+  let inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
     String(i.invoiceNo || "").trim().toLowerCase() === cleanNo.toLowerCase() ||
     String(i.id || "").trim().toLowerCase() === cleanNo.toLowerCase()
   );
+
+  // 2. Fallback: Parse verification details directly from URL params if guest customer on mobile
+  if (!inv && cleanNo && urlParams.get("verify_invoice")) {
+    const qInvNo = urlParams.get("verify_invoice");
+    if (String(qInvNo).trim().toLowerCase() === cleanNo.toLowerCase()) {
+      const cust = urlParams.get("cust") || "Valued Customer";
+      const phone = urlParams.get("ph") || "";
+      const tot = Number(urlParams.get("tot") || 0);
+      const paid = Number(urlParams.get("paid") || 0);
+      const bal = Number(urlParams.get("bal") || Math.max(0, tot - paid));
+      const dt = urlParams.get("dt") || new Date().toISOString();
+
+      if (tot > 0 || cust !== "Valued Customer") {
+        inv = {
+          invoiceNo: cleanNo,
+          buyerName: cust,
+          buyerPhone: phone,
+          total: tot,
+          paidAmount: paid,
+          balanceDue: bal,
+          invoiceDate: dt,
+          details: {
+            invoiceNo: cleanNo,
+            invoiceDate: dt,
+            total: tot,
+            paidAmount: paid,
+            balanceDue: bal,
+            buyer: { name: cust, phone: phone }
+          }
+        };
+      }
+    }
+  }
 
   const stateInvalid = document.getElementById("verify-state-invalid");
   const stateValid = document.getElementById("verify-state-valid");
@@ -12369,11 +12422,16 @@ window.submitInvoicePaymentSettlement = function() {
 window.checkUrlVerificationParams = function() {
   try {
     const urlParams = new URLSearchParams(window.location.search);
-    const verifyInvoiceParam = urlParams.get("verify_invoice");
+    const verifyInvoiceParam = urlParams.get("verify_invoice") || urlParams.get("invoice") || urlParams.get("verify");
     if (verifyInvoiceParam) {
-      setTimeout(() => {
-        openInvoiceVerificationModal(verifyInvoiceParam);
-      }, 500);
+      const targetNo = verifyInvoiceParam.trim();
+      // Immediate execution
+      openInvoiceVerificationModal(targetNo);
+      // Scheduled retries for async DB loading
+      setTimeout(() => openInvoiceVerificationModal(targetNo), 300);
+      setTimeout(() => openInvoiceVerificationModal(targetNo), 800);
+      setTimeout(() => openInvoiceVerificationModal(targetNo), 1800);
+      setTimeout(() => openInvoiceVerificationModal(targetNo), 3500);
     }
   } catch (e) {
     console.warn("Error checking URL verification params:", e);
@@ -12383,4 +12441,5 @@ window.checkUrlVerificationParams = function() {
 document.addEventListener("DOMContentLoaded", () => {
   window.checkUrlVerificationParams();
 });
+window.checkUrlVerificationParams();
 
