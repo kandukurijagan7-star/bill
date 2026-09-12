@@ -204,6 +204,10 @@
             <i class="fa-brands fa-telegram" style="color: #0284c7;"></i>
             <span id="tg-bot-status-text">Telegram</span>
           </div>
+          <div id="live-data-share-pill" class="data-share-pill cursor-pointer" onclick="openDataSharingModal()" title="Advanced Data Sharing & P2P Quick Sync">
+            <i class="fa-solid fa-share-nodes" style="color: #0284c7;"></i>
+            <span id="data-share-pill-text">Share Data</span>
+          </div>
           <div id="live-audio-fx-pill" class="audio-fx-pill active cursor-pointer" onclick="toggleAudioFeedback()" title="Billing Audio FX (Click to Mute / Unmute)">
             <i class="fa-solid fa-volume-high" id="audio-fx-icon"></i>
             <span id="audio-fx-text">Audio</span>
@@ -1674,6 +1678,9 @@
                     </button>
                     <input type="file" id="import-backup-file" accept=".json" style="display: none;" onchange="importDataBackupJSON(event)">
                   </div>
+                  <button type="button" class="btn btn-primary" onclick="openDataSharingModal()" style="width: 100%; padding: 10px 14px; font-weight: 700; border-radius: 6px; cursor: pointer; background: linear-gradient(135deg, #0284c7, #0d9488); border: none; color: white; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <i class="fa-solid fa-share-nodes"></i> Open Advanced Data Sharing &amp; P2P Hub
+                  </button>
                 </div>
               </div>
 
@@ -1741,6 +1748,12 @@
           </button>
           <button type="button" class="btn btn-whatsapp" id="modal-success-btn-whatsapp" onclick="triggerSuccessModalWhatsApp()" style="padding: 10px; font-weight: 700;">
             <i class="fa-brands fa-whatsapp"></i> WhatsApp
+          </button>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <button type="button" class="btn btn-secondary" onclick="triggerSuccessModalUniversalShare()" style="width: 100%; padding: 10px; font-weight: 700; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;">
+            <i class="fa-solid fa-share-nodes text-emerald"></i> Universal Share (Nearby / Email / Copy)
           </button>
         </div>
 
@@ -2934,6 +2947,307 @@
     </div>
   </div>
 
-  <script src="index_v5.js?v=309_fast_sync"></script>
+  <!-- ADVANCED DATA SHARING & P2P TRANSFER MODAL -->
+  <div id="advanced-data-sharing-modal" class="modal-overlay hidden" onclick="if(event.target === this) closeDataSharingModal();" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(6px); display: none; align-items: center; justify-content: center; z-index: 2147483640;">
+    <div class="modal-card" style="max-width: 680px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; background: #ffffff; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); border: 1px solid #cbd5e1; overflow: hidden; animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
+      
+      <!-- Modal Header -->
+      <div class="modal-header" style="background: linear-gradient(135deg, #0f172a 0%, #0369a1 100%); color: #ffffff; padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1);">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 40px; height: 40px; border-radius: 10px; background: rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; font-size: 20px; color: #38bdf8;">
+            <i class="fa-solid fa-share-nodes"></i>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 17px; font-weight: 700; color: #ffffff; letter-spacing: -0.2px;">Advanced Data Sharing Hub</h3>
+            <p style="margin: 2px 0 0 0; font-size: 12px; color: #bae6fd;">Instant P2P Device Sync • Selective Exports • Multi-Channel Sharing</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close-btn" onclick="closeDataSharingModal()" style="background: rgba(255,255,255,0.15); border: none; color: #ffffff; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div style="display: flex; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; padding: 6px 16px; gap: 8px;">
+        <button type="button" id="tab-data-share-p2p" class="btn btn-sm" onclick="switchDataShareTab('p2p')" style="background: #ffffff; color: #0284c7; font-weight: 700; border: 1px solid #cbd5e1; border-radius: 8px; padding: 7px 14px; font-size: 12.5px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-qrcode text-teal"></i> P2P Device Sync (AirDrop)
+        </button>
+        <button type="button" id="tab-data-share-selective" class="btn btn-sm" onclick="switchDataShareTab('selective')" style="background: transparent; color: #64748b; font-weight: 600; border: none; border-radius: 8px; padding: 7px 14px; font-size: 12.5px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-layer-group"></i> Selective Catalogs & Reports
+        </button>
+        <button type="button" id="tab-data-share-universal" class="btn btn-sm" onclick="switchDataShareTab('universal')" style="background: transparent; color: #64748b; font-weight: 600; border: none; border-radius: 8px; padding: 7px 14px; font-size: 12.5px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-mobile-screen-button"></i> Universal Web Share
+        </button>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div class="modal-body" style="padding: 20px; overflow-y: auto; max-height: calc(90vh - 140px); background: #f8fafc;">
+
+        <!-- TAB 1: P2P DEVICE-TO-DEVICE SYNC -->
+        <div id="panel-data-share-p2p">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            
+            <!-- Left: Share to Nearby Device / Mobile -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
+              <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #0369a1; background: #e0f2fe; padding: 4px 10px; border-radius: 20px; margin-bottom: 12px;">
+                <i class="fa-solid fa-tower-broadcast"></i> SEND TO NEARBY DEVICE
+              </div>
+              <p style="font-size: 12px; color: #64748b; margin: 0 0 14px 0;">Point phone camera or scan with second device to pair instantly:</p>
+              
+              <div style="background: #ffffff; border: 2px dashed #38bdf8; border-radius: 12px; padding: 12px; display: inline-flex; justify-content: center; align-items: center; margin-bottom: 12px;">
+                <canvas id="p2p-sync-qrcode" style="width: 170px; height: 170px; display: block;"></canvas>
+              </div>
+
+              <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; margin-bottom: 4px;">Quick Sync PIN:</div>
+              <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 10px;">
+                <span id="p2p-sync-pin-text" style="font-family: monospace; font-size: 20px; font-weight: 800; color: #0f172a; background: #f1f5f9; padding: 4px 14px; border-radius: 8px; border: 1px solid #cbd5e1; letter-spacing: 1px;">SYNC-8921</span>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="copySyncPairingPin()" title="Copy PIN" style="padding: 6px 10px;">
+                  <i class="fa-solid fa-copy"></i>
+                </button>
+              </div>
+              <span id="p2p-sync-status-indicator" style="font-size: 11px; color: #16a34a; font-weight: 600;">🟢 Beacon Active on EMQX Mesh</span>
+            </div>
+
+            <!-- Right: Receive / Pull from Another Device -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
+              <div>
+                <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #15803d; background: #dcfce7; padding: 4px 10px; border-radius: 20px; margin-bottom: 12px;">
+                  <i class="fa-solid fa-arrow-down-to-bracket"></i> RECEIVE FROM PEER
+                </div>
+                <h4 style="margin: 0 0 6px 0; font-size: 14px; color: #0f172a;">Connect &amp; Pull Database</h4>
+                <p style="font-size: 12.5px; color: #64748b; line-height: 1.4; margin: 0 0 16px 0;">Enter the 6-digit Sync PIN displayed on the sending counter to clone invoices, catalog &amp; customers in &lt;1 second:</p>
+
+                <div class="form-group" style="margin-bottom: 14px;">
+                  <label style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase;">Sync PIN Code:</label>
+                  <input type="text" id="p2p-input-sync-pin" placeholder="e.g. SYNC-8921" style="width: 100%; font-family: monospace; font-size: 16px; font-weight: 700; text-transform: uppercase; text-align: center; padding: 10px; border: 2px solid #cbd5e1; border-radius: 8px;" maxlength="12">
+                </div>
+
+                <button type="button" id="btn-pull-peer-db" class="btn btn-primary" onclick="connectPeerBySyncPin(this)" style="width: 100%; padding: 11px; font-weight: 700; background: linear-gradient(135deg, #0284c7, #2563eb); border: none; border-radius: 8px; color: white; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;">
+                  <i class="fa-solid fa-bolt"></i> Pull &amp; Sync Database (&lt; 1s)
+                </button>
+              </div>
+
+              <div style="margin-top: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; font-size: 11.5px; color: #64748b; line-height: 1.4;">
+                <i class="fa-solid fa-shield-halved text-teal"></i> <strong>Encrypted Transfer:</strong> Direct peer mesh channel. No files are uploaded to third-party public drives.
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- TAB 2: SELECTIVE DATA EXPORT & SHARING -->
+        <div id="panel-data-share-selective" style="display: none;">
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+
+            <!-- Item 1: Product Catalog & Price List -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                <div>
+                  <h4 style="margin: 0; font-size: 14px; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-boxes-stacked" style="color: #0284c7;"></i> Product Catalog &amp; Price List
+                  </h4>
+                  <p style="margin: 3px 0 0 0; font-size: 12px; color: #64748b;">Share up-to-date products, rates, and stock count with customers or sales agents.</p>
+                </div>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; cursor: pointer; user-select: none;">
+                  <input type="checkbox" id="share-catalog-include-stock" checked style="accent-color: #0284c7;">
+                  <span>Include Stock Quantities</span>
+                </label>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-sm btn-whatsapp" onclick="shareProductCatalogAction('whatsapp')" style="background: #16a34a; color: white; border: none; padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-brands fa-whatsapp"></i> Share WhatsApp
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="shareProductCatalogAction('copy')" style="padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-copy"></i> Copy Text Catalog
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="shareProductCatalogAction('csv')" style="padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-file-csv text-emerald"></i> Export CSV
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="shareProductCatalogAction('native')" style="padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-share-nodes text-sky"></i> Native Share
+                </button>
+              </div>
+            </div>
+
+            <!-- Item 2: Today's Sales & Tax Summary -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                <div>
+                  <h4 style="margin: 0; font-size: 14px; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-chart-line" style="color: #10b981;"></i> Today's Sales &amp; GST Report
+                  </h4>
+                  <p style="margin: 3px 0 0 0; font-size: 12px; color: #64748b;">Instant day-end turnover, tax breakdown (CGST/SGST), and invoice count for owner or accountant.</p>
+                </div>
+                <div id="share-today-stats-pill" style="font-size: 11.5px; font-weight: 700; color: #047857; background: #d1fae5; padding: 3px 9px; border-radius: 12px;">
+                  Calculating today...
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-sm btn-whatsapp" onclick="shareTodaySalesReportAction('whatsapp')" style="background: #16a34a; color: white; border: none; padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-brands fa-whatsapp"></i> Send to Owner / CA
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="shareTodaySalesReportAction('copy')" style="padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-copy"></i> Copy Day Summary
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="shareTodaySalesReportAction('csv')" style="padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-file-csv text-emerald"></i> Export Today's CSV
+                </button>
+              </div>
+            </div>
+
+            <!-- Item 3: Customer Outstanding Balances Ledger -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                <div>
+                  <h4 style="margin: 0; font-size: 14px; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-hand-holding-dollar" style="color: #f59e0b;"></i> Customer Ledgers &amp; Outstanding Dues
+                  </h4>
+                  <p style="margin: 3px 0 0 0; font-size: 12px; color: #64748b;">Summary of pending customer receivables, unpaid balances, and UPI collection link.</p>
+                </div>
+                <div id="share-dues-stats-pill" style="font-size: 11.5px; font-weight: 700; color: #b45309; background: #fef3c7; padding: 3px 9px; border-radius: 12px;">
+                  Calculating dues...
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-sm btn-whatsapp" onclick="shareOutstandingDuesAction('whatsapp')" style="background: #16a34a; color: white; border: none; padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-brands fa-whatsapp"></i> Share Dues Summary
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="shareOutstandingDuesAction('copy')" style="padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-copy"></i> Copy Dues List
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="shareOutstandingDuesAction('csv')" style="padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-file-csv text-emerald"></i> Export Dues CSV
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- TAB 3: UNIVERSAL WEB SHARE & CAPABILITIES -->
+        <div id="panel-data-share-universal" style="display: none;">
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px; box-shadow: 0 2px 4px rgba(0,0,0,0.03); margin-bottom: 16px;">
+            <h4 style="margin: 0 0 8px 0; font-size: 14.5px; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-circle-check text-success"></i> Active Device Sharing Capabilities
+            </h4>
+            <p style="font-size: 12.5px; color: #64748b; margin: 0 0 16px 0;">This browser is equipped with multi-protocol sharing channels:</p>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 12.5px;">
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px;">
+                <strong style="color: #0f172a;">Native OS Share Sheet:</strong>
+                <p id="cap-web-share-status" style="margin: 4px 0 0 0; color: #16a34a; font-weight: 600;">Supported (Nearby/Bluetooth/Apps)</p>
+              </div>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px;">
+                <strong style="color: #0f172a;">WhatsApp Bot Daemon:</strong>
+                <p id="cap-wa-bot-status" style="margin: 4px 0 0 0; color: #16a34a; font-weight: 600;">Active on Port 3001</p>
+              </div>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px;">
+                <strong style="color: #0f172a;">EMQX Real-Time Mesh:</strong>
+                <p id="cap-mesh-status" style="margin: 4px 0 0 0; color: #16a34a; font-weight: 600;">Active (&lt;20ms)</p>
+              </div>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px;">
+                <strong style="color: #0f172a;">Google Cloud Sync:</strong>
+                <p style="margin: 4px 0 0 0; color: #0284c7; font-weight: 600;">Google Sheets &amp; Drive Linked</p>
+              </div>
+            </div>
+          </div>
+
+          <div style="text-align: center;">
+            <button type="button" class="btn btn-primary" onclick="testNativeWebShare()" style="padding: 10px 18px; font-weight: 600; border-radius: 8px; background: #0284c7; border: none; color: white; cursor: pointer;">
+              <i class="fa-solid fa-paper-plane"></i> Test Native Device Share Sheet
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="modal-footer" style="padding: 12px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 11.5px; color: #64748b;"><i class="fa-solid fa-lock text-teal"></i> Direct peer-to-peer data synchronization</span>
+        <button type="button" class="btn btn-secondary" onclick="closeDataSharingModal()" style="padding: 7px 18px; font-size: 12.5px; cursor: pointer; border-radius: 6px;">Close</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- UNIVERSAL INVOICE SHARE MODAL -->
+  <div id="universal-invoice-share-modal" class="modal-overlay hidden" onclick="if(event.target === this) closeUniversalInvoiceShareModal();" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(6px); display: none; align-items: center; justify-content: center; z-index: 2147483640;">
+    <div class="modal-card" style="max-width: 520px; width: 92%; background: #ffffff; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); border: 1px solid #cbd5e1; overflow: hidden; animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
+      
+      <div class="modal-header" style="background: linear-gradient(135deg, #065f46 0%, #0d9488 100%); color: #ffffff; padding: 18px 22px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <i class="fa-solid fa-share-nodes" style="font-size: 20px; color: #6ee7b7;"></i>
+          <div>
+            <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #ffffff;" id="uism-title">Share Tax Invoice</h3>
+            <p style="margin: 2px 0 0 0; font-size: 12px; color: #a7f3d0;" id="uism-subtitle">Multi-channel instant dispatch</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close-btn" onclick="closeUniversalInvoiceShareModal()" style="background: rgba(255,255,255,0.2); border: none; color: #ffffff; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="modal-body" style="padding: 20px; font-size: 13px; color: #334155;">
+        
+        <!-- Invoice Snapshot Summary Card -->
+        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px;" id="uism-invoice-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <strong style="font-size: 14px; color: #065f46;" id="uism-card-inv-no">Invoice #INV-0001</strong>
+            <span style="font-size: 12px; font-weight: 700; color: #047857;" id="uism-card-total">₹ 0.00</span>
+          </div>
+          <p style="margin: 0; font-size: 12px; color: #166534;" id="uism-card-customer">Customer: Sri Venkateswara Hatcheries</p>
+          <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #047857;" id="uism-card-phone">Mobile: +91 9876543210</p>
+        </div>
+
+        <p style="font-size: 11.5px; font-weight: 700; text-transform: uppercase; color: #64748b; margin: 0 0 10px 0; letter-spacing: 0.5px;">Choose Sharing Method:</p>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <!-- Channel 1: WhatsApp Bot / Direct -->
+          <button type="button" class="btn" onclick="executeUniversalShare('whatsapp')" style="background: #16a34a; color: white; border: none; border-radius: 8px; padding: 11px 16px; font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: 0.2s;">
+            <span style="display: flex; align-items: center; gap: 10px;">
+              <i class="fa-brands fa-whatsapp fa-lg"></i>
+              <span>Send via WhatsApp (Bot &amp; PDF)</span>
+            </span>
+            <span style="font-size: 11px; background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 12px;">Instant</span>
+          </button>
+
+          <!-- Channel 2: Native OS Share Sheet -->
+          <button type="button" class="btn" onclick="executeUniversalShare('native')" style="background: #0284c7; color: white; border: none; border-radius: 8px; padding: 11px 16px; font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: 0.2s;">
+            <span style="display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-share-nodes fa-lg"></i>
+              <span>Native Device Share (Nearby / AirDrop / Bluetooth)</span>
+            </span>
+            <span style="font-size: 11px; background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 12px;">OS Sheet</span>
+          </button>
+
+          <!-- Channel 3: Email Tax Invoice -->
+          <button type="button" class="btn" onclick="executeUniversalShare('email')" style="background: #ffffff; color: #334155; border: 1px solid #cbd5e1; border-radius: 8px; padding: 11px 16px; font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: 0.2s;">
+            <span style="display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-envelope fa-lg" style="color: #6366f1;"></i>
+              <span>Email Invoice to Customer / Accountant</span>
+            </span>
+            <i class="fa-solid fa-arrow-up-right-from-square" style="color: #94a3b8; font-size: 12px;"></i>
+          </button>
+
+          <!-- Channel 4: Copy Formatted Card to Clipboard -->
+          <button type="button" class="btn" onclick="executeUniversalShare('copy')" style="background: #ffffff; color: #334155; border: 1px solid #cbd5e1; border-radius: 8px; padding: 11px 16px; font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: 0.2s;">
+            <span style="display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-copy fa-lg" style="color: #0d9488;"></i>
+              <span>Copy Formatted Bill Card to Clipboard</span>
+            </span>
+            <span style="font-size: 11px; color: #64748b;">Text</span>
+          </button>
+        </div>
+
+      </div>
+
+      <div class="modal-footer" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" onclick="closeUniversalInvoiceShareModal()" style="padding: 7px 18px; font-size: 12.5px; cursor: pointer; border-radius: 6px;">Close</button>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="index_v5.js?v=310_advanced_sharing"></script>
 </body>
 </html>

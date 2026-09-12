@@ -439,11 +439,14 @@ function initRealtimeMeshSync() {
     });
 
     realtimeMeshClient.on('message', (topic, message) => {
-      if (topic !== SYNC_MESH_TOPIC) return;
       try {
         const msg = JSON.parse(message.toString());
-        if (!msg || msg.senderId === MY_SYNC_CLIENT_ID) return; // Prevent self-echo
-        processRealtimeSyncMessage(msg, 'mqtt_mesh');
+        if (topic === SYNC_MESH_TOPIC) {
+          if (!msg || msg.senderId === MY_SYNC_CLIENT_ID) return; // Prevent self-echo
+          processRealtimeSyncMessage(msg, 'mqtt_mesh');
+        } else if (typeof checkAndRespondToP2PPairing === 'function') {
+          checkAndRespondToP2PPairing(topic, msg);
+        }
       } catch (err) {}
     });
 
@@ -2898,6 +2901,7 @@ function updateDashboardOverview() {
           <button class="action-btn print" onclick="printSavedInvoiceThermal('${inv.id}')" title="Print Thermal POS Receipt"><i class="fa-solid fa-receipt"></i></button>
           <button class="action-btn share btn-whatsapp" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Share PDF via WhatsApp (1-Click)"><i class="fa-brands fa-whatsapp" style="color: #16a34a;"></i></button>
           <button class="action-btn share btn-telegram" onclick="shareInvoiceToTelegram('${inv.id}', this)" title="Share PDF to Telegram (@fishbilling_bot_bot)"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i></button>
+          <button class="action-btn share" onclick="openUniversalInvoiceShareModal('${inv.id}')" title="Universal Share (Nearby / Email / Copy / Native)"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i></button>
           <button class="action-btn delete" onclick="deleteSavedInvoice('${inv.id}')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>
         </td>
       `;
@@ -5078,6 +5082,15 @@ window.triggerSuccessModalWhatsApp = function() {
   const rec = lastSavedInvoiceRecord;
   const waBtn = document.getElementById("modal-success-btn-whatsapp");
   shareInvoicePdfNative(rec.details, waBtn, false);
+};
+
+window.triggerSuccessModalUniversalShare = function() {
+  if (!lastSavedInvoiceRecord) return;
+  const rec = lastSavedInvoiceRecord;
+  const invId = rec.id || (rec.details && (rec.details.invoiceNumber || rec.details.invoiceNo));
+  if (invId && typeof window.openUniversalInvoiceShareModal === 'function') {
+    window.openUniversalInvoiceShareModal(invId);
+  }
 };
 
 // --- POPULATE PRINT VIEW CANVAS (A4) ---
@@ -7633,6 +7646,7 @@ function renderHistoryTableRows(records) {
         <button class="action-btn print" onclick="printSavedInvoiceThermal('${inv.id}')" title="Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
         <button class="action-btn share btn-whatsapp" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Share PDF via WhatsApp"><i class="fa-brands fa-whatsapp" style="color: #16a34a;"></i></button>
         <button class="action-btn share btn-telegram" onclick="shareInvoiceToTelegram('${inv.id}', this)" title="Share PDF to Telegram (@fishbilling_bot_bot)"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i></button>
+        <button class="action-btn share" onclick="openUniversalInvoiceShareModal('${inv.id}')" title="Universal Share (Nearby / Email / Copy / Native)"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i></button>
         <button class="action-btn delete" onclick="deleteSavedInvoice('${inv.id}')" title="Delete"><i class="fa-solid fa-trash"></i></button>
       </td>
     `;
@@ -9718,3 +9732,956 @@ window.testDirectWhatsAppClick = function(overridePhone) {
     showFloatingToast("⚠️ Please enter a valid 10-digit mobile number.", "warning");
   }
 };
+
+// ============================================================================
+// --- ADVANCED DATA SHARING, P2P AIRDROP DEVICE SYNC & UNIVERSAL DISPATCH ---
+// ============================================================================
+
+let currentSyncPairingPin = null;
+let currentShareInvoiceRecord = null;
+let p2pSyncTimeout = null;
+
+// Helper: Download a generated CSV file
+function downloadCsvBlob(filename, csvContent) {
+  try {
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      try {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (e) {}
+    }, 500);
+  } catch (err) {
+    console.error("Failed to download CSV:", err);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ CSV download failed: " + err.message, "warning");
+    }
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 1. DATA SHARING HUB MODAL MANAGEMENT & TAB NAVIGATION
+// ----------------------------------------------------------------------------
+
+window.openDataSharingModal = function(initialTab = 'p2p') {
+  const modal = document.getElementById("advanced-data-sharing-modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+
+  window.switchDataShareTab(initialTab);
+};
+
+window.closeDataSharingModal = function() {
+  const modal = document.getElementById("advanced-data-sharing-modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.style.display = "none";
+};
+
+window.switchDataShareTab = function(tabName) {
+  const tabP2p = document.getElementById("tab-data-share-p2p");
+  const tabSelective = document.getElementById("tab-data-share-selective");
+  const tabUniversal = document.getElementById("tab-data-share-universal");
+
+  const panelP2p = document.getElementById("panel-data-share-p2p");
+  const panelSelective = document.getElementById("panel-data-share-selective");
+  const panelUniversal = document.getElementById("panel-data-share-universal");
+
+  // Reset tab button states
+  [tabP2p, tabSelective, tabUniversal].forEach(btn => {
+    if (btn) {
+      btn.style.background = "transparent";
+      btn.style.color = "#64748b";
+      btn.style.fontWeight = "600";
+      btn.style.border = "none";
+    }
+  });
+
+  // Hide all panels
+  if (panelP2p) panelP2p.style.display = "none";
+  if (panelSelective) panelSelective.style.display = "none";
+  if (panelUniversal) panelUniversal.style.display = "none";
+
+  if (tabName === 'p2p') {
+    if (tabP2p) {
+      tabP2p.style.background = "#ffffff";
+      tabP2p.style.color = "#0284c7";
+      tabP2p.style.fontWeight = "700";
+      tabP2p.style.border = "1px solid #cbd5e1";
+    }
+    if (panelP2p) panelP2p.style.display = "block";
+    ensureSyncPairingActive();
+  } else if (tabName === 'selective') {
+    if (tabSelective) {
+      tabSelective.style.background = "#ffffff";
+      tabSelective.style.color = "#0284c7";
+      tabSelective.style.fontWeight = "700";
+      tabSelective.style.border = "1px solid #cbd5e1";
+    }
+    if (panelSelective) panelSelective.style.display = "block";
+    updateSelectiveShareStats();
+  } else if (tabName === 'universal') {
+    if (tabUniversal) {
+      tabUniversal.style.background = "#ffffff";
+      tabUniversal.style.color = "#0284c7";
+      tabUniversal.style.fontWeight = "700";
+      tabUniversal.style.border = "1px solid #cbd5e1";
+    }
+    if (panelUniversal) panelUniversal.style.display = "block";
+    refreshDeviceCapabilitiesUI();
+  }
+};
+
+// ----------------------------------------------------------------------------
+// 2. P2P DEVICE-TO-DEVICE INSTANT SYNC ("AIRDROP" FOR BILLING)
+// ----------------------------------------------------------------------------
+
+function ensureSyncPairingActive() {
+  if (!currentSyncPairingPin) {
+    currentSyncPairingPin = "SYNC-" + Math.floor(1000 + Math.random() * 9000);
+  }
+
+  const pinEl = document.getElementById("p2p-sync-pin-text");
+  if (pinEl) pinEl.textContent = currentSyncPairingPin;
+
+  // Render QRious QR Code
+  const qrCanvas = document.getElementById("p2p-sync-qrcode");
+  if (qrCanvas) {
+    const pairUrl = window.location.origin + window.location.pathname + "?sync_pin=" + encodeURIComponent(currentSyncPairingPin);
+    if (typeof QRious !== "undefined") {
+      try {
+        new QRious({
+          element: qrCanvas,
+          value: pairUrl,
+          size: 170,
+          level: 'H'
+        });
+      } catch (err) {
+        console.warn("P2P QR generation error:", err);
+      }
+    }
+  }
+
+  // Subscribe to beacon topic on EMQX Realtime Mesh
+  if (realtimeMeshClient && realtimeMeshClient.connected) {
+    const pairTopic = "aaryan_aqua_gst_billing_2026/pair_" + currentSyncPairingPin;
+    realtimeMeshClient.subscribe(pairTopic, { qos: 0 });
+    const indicator = document.getElementById("p2p-sync-status-indicator");
+    if (indicator) {
+      indicator.innerHTML = `🟢 Beacon Active on EMQX Mesh (<20ms)`;
+      indicator.style.color = "#16a34a";
+    }
+  }
+}
+
+window.copySyncPairingPin = function() {
+  if (!currentSyncPairingPin) ensureSyncPairingActive();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(currentSyncPairingPin).then(() => {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`📋 Sync PIN ${currentSyncPairingPin} copied to clipboard!`, 3000);
+      }
+    }).catch(() => {
+      prompt("Copy Sync PIN:", currentSyncPairingPin);
+    });
+  } else {
+    prompt("Copy Sync PIN:", currentSyncPairingPin);
+  }
+};
+
+window.connectPeerBySyncPin = function(btn) {
+  const pinInput = document.getElementById("p2p-input-sync-pin");
+  if (!pinInput) return;
+  let pin = pinInput.value.trim().toUpperCase();
+
+  if (!pin) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Please enter a 6-character Sync PIN (e.g. SYNC-8921)", "warning");
+    }
+    pinInput.focus();
+    return;
+  }
+
+  if (!pin.startsWith("SYNC-")) {
+    if (/^\d{4}$/.test(pin)) {
+      pin = "SYNC-" + pin;
+      pinInput.value = pin;
+    }
+  }
+
+  if (pin === currentSyncPairingPin) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Cannot pull data from self. Enter the PIN from another device.", "warning");
+    }
+    return;
+  }
+
+  if (!realtimeMeshClient || !realtimeMeshClient.connected) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Connecting to real-time mesh. Please try again in a moment...", "warning");
+    }
+    initRealtimeMeshSync();
+    return;
+  }
+
+  const origBtnText = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Pulling peer database (<1s)...`;
+  }
+
+  const targetTopic = "aaryan_aqua_gst_billing_2026/pair_" + pin;
+  realtimeMeshClient.subscribe(targetTopic, { qos: 0 });
+
+  const pullRequest = {
+    type: "P2P_PULL_REQUEST",
+    requesterId: MY_SYNC_CLIENT_ID,
+    pin: pin,
+    timestamp: Date.now()
+  };
+
+  realtimeMeshClient.publish(targetTopic, JSON.stringify(pullRequest));
+
+  if (p2pSyncTimeout) clearTimeout(p2pSyncTimeout);
+  p2pSyncTimeout = setTimeout(() => {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origBtnText;
+    }
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Peer device did not respond. Verify that the sender has the P2P Sync modal open and PIN matches.", "warning");
+    }
+  }, 7000);
+};
+
+// Handle incoming P2P pairing signals across EMQX mesh
+function checkAndRespondToP2PPairing(topic, msg) {
+  if (!msg || !msg.type) return;
+
+  const currentPairTopic = currentSyncPairingPin ? ("aaryan_aqua_gst_billing_2026/pair_" + currentSyncPairingPin) : null;
+
+  // 1. SENDER: Respond to peer pull request
+  if (msg.type === "P2P_PULL_REQUEST") {
+    if (msg.requesterId === MY_SYNC_CLIENT_ID) return; // Ignore own request
+    if (currentPairTopic && topic === currentPairTopic) {
+      // Compile full local snapshot
+      const dbPayload = {
+        type: "P2P_STATE_PAYLOAD",
+        senderId: MY_SYNC_CLIENT_ID,
+        requesterId: msg.requesterId,
+        pin: currentSyncPairingPin,
+        timestamp: Date.now(),
+        data: {
+          invoices: invoicesDb || [],
+          products: productsDb || [],
+          parties: partiesDb || [],
+          settings: globalSettings || {}
+        }
+      };
+      realtimeMeshClient.publish(topic, JSON.stringify(dbPayload));
+
+      if (typeof showFloatingToast === 'function') {
+        const shortPeer = (msg.requesterId || "Peer").toString().slice(-4);
+        showFloatingToast(`⚡ AirDrop Sync: Database successfully transmitted to Device #${shortPeer}!`, 4000);
+      }
+    }
+  }
+
+  // 2. RECEIVER: Process state payload received from sender
+  if (msg.type === "P2P_STATE_PAYLOAD") {
+    if (msg.requesterId === MY_SYNC_CLIENT_ID) {
+      if (p2pSyncTimeout) {
+        clearTimeout(p2pSyncTimeout);
+        p2pSyncTimeout = null;
+      }
+
+      const btn = document.getElementById("btn-pull-peer-db");
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<i class="fa-solid fa-check"></i> Database Synchronized!`;
+        setTimeout(() => {
+          btn.innerHTML = `<i class="fa-solid fa-bolt"></i> Pull &amp; Sync Database (&lt; 1s)`;
+        }, 3000);
+      }
+
+      hydrateSyncedDatabase(msg.data);
+    }
+  }
+}
+
+// Hydrate database into localStorage and update all active UI tables
+function hydrateSyncedDatabase(data) {
+  if (!data || typeof data !== "object") {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Received invalid database payload from peer.", "warning");
+    }
+    return;
+  }
+
+  try {
+    const invoices = Array.isArray(data.invoices) ? data.invoices : [];
+    const products = Array.isArray(data.products) ? data.products : [];
+    const parties = Array.isArray(data.parties) ? data.parties : [];
+    const settings = (data.settings && typeof data.settings === "object") ? data.settings : null;
+
+    localStorage.setItem("invoices", JSON.stringify(invoices));
+    localStorage.setItem("products", JSON.stringify(products));
+    localStorage.setItem("parties", JSON.stringify(parties));
+    if (settings) {
+      localStorage.setItem("settings", JSON.stringify(settings));
+      globalSettings = settings;
+    }
+
+    invoicesDb = invoices;
+    productsDb = products;
+    partiesDb = parties;
+
+    // Refresh UI components
+    if (typeof loadAllDatabases === 'function') loadAllDatabases();
+    if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
+    if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+    if (typeof renderProductsTable === 'function') renderProductsTable();
+    if (typeof renderPartiesTable === 'function') renderPartiesTable();
+    if (typeof applySettings === 'function') applySettings();
+
+    if (typeof playSuccessChime === 'function') playSuccessChime();
+
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`🎉 Instant P2P Sync Complete! Restored ${invoices.length} invoices, ${products.length} products & ${parties.length} parties in <1s!`, 5000);
+    }
+
+    window.closeDataSharingModal();
+  } catch (err) {
+    console.error("Hydration error:", err);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Error applying synced database: " + err.message, "warning");
+    }
+  }
+}
+
+// Auto-pair when opened via QR Code URL query parameter (?sync_pin=SYNC-XXXX)
+(function checkAutoSyncPinUrlParam() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const pinParam = params.get('sync_pin');
+    if (pinParam) {
+      const cleanPin = pinParam.trim().toUpperCase();
+      // Clean query parameter from browser bar without reloading
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+      setTimeout(() => {
+        window.openDataSharingModal('p2p');
+        const input = document.getElementById("p2p-input-sync-pin");
+        if (input) input.value = cleanPin;
+        const btn = document.getElementById("btn-pull-peer-db");
+        window.connectPeerBySyncPin(btn);
+      }, 1000);
+    }
+  } catch (e) {}
+})();
+
+// ----------------------------------------------------------------------------
+// 3. SELECTIVE DATA SHARING & EXPORTERS
+// ----------------------------------------------------------------------------
+
+function updateSelectiveShareStats() {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  let todayCount = 0;
+  let todayTotal = 0;
+
+  if (Array.isArray(invoicesDb)) {
+    invoicesDb.forEach(inv => {
+      const invDate = inv.date || (inv.details && inv.details.date) || "";
+      if (invDate === todayStr || (inv.timestamp && new Date(inv.timestamp).toISOString().slice(0, 10) === todayStr)) {
+        todayCount++;
+        todayTotal += Number(inv.total || (inv.details && inv.details.totalAmount) || 0);
+      }
+    });
+  }
+
+  const todayPill = document.getElementById("share-today-stats-pill");
+  if (todayPill) {
+    todayPill.textContent = `Today: ₹ ${formatCurrency(todayTotal)} (${todayCount} bills)`;
+  }
+
+  // Calculate total outstanding dues
+  let totalDues = 0;
+  let duesCount = 0;
+  if (Array.isArray(invoicesDb)) {
+    invoicesDb.forEach(inv => {
+      const balance = Number(inv.balanceDue || (inv.details && inv.details.balanceDue) || 0);
+      if (balance > 0) {
+        totalDues += balance;
+        duesCount++;
+      }
+    });
+  }
+
+  const duesPill = document.getElementById("share-dues-stats-pill");
+  if (duesPill) {
+    duesPill.textContent = `Outstanding: ₹ ${formatCurrency(totalDues)} (${duesCount} pending)`;
+  }
+}
+
+// Item 1: Product Catalog & Price List
+window.shareProductCatalogAction = function(action) {
+  const prods = Array.isArray(productsDb) ? productsDb : [];
+  if (prods.length === 0) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Product catalog is currently empty.", "warning");
+    }
+    return;
+  }
+
+  const includeStock = !!(document.getElementById("share-catalog-include-stock")?.checked);
+  const company = (globalSettings?.company?.name || "AARYAN AQUA NEEDS").toUpperCase();
+  const phone = (globalSettings?.company?.phone || "7386262139").trim();
+  const upi = (globalSettings?.upiId || "7386262139@upi").trim();
+  const todayDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  if (action === 'csv') {
+    let csv = "Product Name,HSN Code,Tax Rate %,Unit,Rate (INR)";
+    if (includeStock) csv += ",Current Stock";
+    csv += "\r\n";
+
+    prods.forEach(p => {
+      const name = `"${(p.description || '').replace(/"/g, '""')}"`;
+      const hsn = `"${p.hsn || ''}"`;
+      const gst = p.taxRate || 0;
+      const unit = `"${p.unit || 'Kg'}"`;
+      const rate = Number(p.rate || 0).toFixed(2);
+      let row = `${name},${hsn},${gst},${unit},${rate}`;
+      if (includeStock) row += `,${p.stock || 0}`;
+      csv += row + "\r\n";
+    });
+
+    downloadCsvBlob(`Product_Catalog_${todayDate.replace(/\s+/g, '_')}.csv`, csv);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("📁 Product catalog exported as CSV!", 3000);
+    }
+    return;
+  }
+
+  // Format text catalog
+  let text = `🏛️ *${company}*\n`;
+  text += `📦 *PRODUCT CATALOG & PRICE LIST*\n`;
+  text += `📅 *Date:* ${todayDate}\n`;
+  text += `-----------------------------------\n\n`;
+
+  prods.forEach((p, idx) => {
+    const unit = p.unit || 'Kg';
+    text += `${idx + 1}. *${p.description}*\n`;
+    text += `   Rate: ₹ ${formatCurrency(p.rate || 0)} / ${unit}`;
+    if (includeStock) {
+      text += ` | Stock: ${p.stock !== undefined ? p.stock : 'N/A'}`;
+    }
+    text += `\n`;
+  });
+
+  text += `\n-----------------------------------\n`;
+  text += `📞 *For Orders:* ${phone}\n`;
+  text += `💳 *UPI ID:* ${upi}\n`;
+  text += `_Prices are subject to market conditions._`;
+
+  if (action === 'copy') {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast("📋 Product catalog copied to clipboard!", 3000);
+        }
+      }).catch(() => {
+        prompt("Copy Product Catalog:", text);
+      });
+    } else {
+      prompt("Copy Product Catalog:", text);
+    }
+  } else if (action === 'whatsapp') {
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    openWhatsAppDirect(waUrl);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("📲 WhatsApp catalog dispatch launched!", 3000);
+    }
+  } else if (action === 'native') {
+    if (navigator.share) {
+      navigator.share({
+        title: `${company} Product Catalog`,
+        text: text
+      }).catch(() => {});
+    } else {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast("📋 Copied catalog text to clipboard (Native share not supported on this browser).", 3500);
+        }
+      }
+    }
+  }
+};
+
+// Item 2: Today's Sales & Tax Report
+window.shareTodaySalesReportAction = function(action) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayFormatted = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const company = (globalSettings?.company?.name || "AARYAN AQUA NEEDS").toUpperCase();
+
+  const todayInvoices = (Array.isArray(invoicesDb) ? invoicesDb : []).filter(inv => {
+    const invDate = inv.date || (inv.details && inv.details.date) || "";
+    return invDate === todayStr || (inv.timestamp && new Date(inv.timestamp).toISOString().slice(0, 10) === todayStr);
+  });
+
+  if (todayInvoices.length === 0) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ No invoices recorded for today yet.", "warning");
+    }
+    return;
+  }
+
+  let totalTaxable = 0;
+  let totalCgst = 0;
+  let totalSgst = 0;
+  let totalIgst = 0;
+  let totalGrand = 0;
+  let totalPaid = 0;
+  let totalDue = 0;
+
+  todayInvoices.forEach(inv => {
+    const det = inv.details || inv;
+    totalTaxable += Number(det.taxable || 0);
+    totalCgst += Number(det.cgst || 0);
+    totalSgst += Number(det.sgst || 0);
+    totalIgst += Number(det.igst || 0);
+    const grand = Number(det.totalAmount || det.total || 0);
+    const paid = Number(det.paidAmount !== undefined ? det.paidAmount : grand);
+    const due = Number(det.balanceDue !== undefined ? det.balanceDue : (grand - paid));
+    totalGrand += grand;
+    totalPaid += paid;
+    totalDue += due;
+  });
+
+  if (action === 'csv') {
+    let csv = "Invoice No,Date,Customer Name,Phone,Taxable Amount,CGST,SGST,IGST,Grand Total,Paid Amount,Balance Due\r\n";
+    todayInvoices.forEach(inv => {
+      const det = inv.details || inv;
+      const invNo = `"${det.invoiceNo || ''}"`;
+      const date = `"${det.date || todayStr}"`;
+      const cust = `"${(det.buyer?.name || inv.customerName || 'Cash Customer').replace(/"/g, '""')}"`;
+      const phone = `"${det.buyer?.phone || inv.customerPhone || ''}"`;
+      const taxable = Number(det.taxable || 0).toFixed(2);
+      const cgst = Number(det.cgst || 0).toFixed(2);
+      const sgst = Number(det.sgst || 0).toFixed(2);
+      const igst = Number(det.igst || 0).toFixed(2);
+      const grand = Number(det.totalAmount || det.total || 0).toFixed(2);
+      const paid = Number(det.paidAmount !== undefined ? det.paidAmount : grand).toFixed(2);
+      const due = Number(det.balanceDue !== undefined ? det.balanceDue : (grand - paid)).toFixed(2);
+
+      csv += `${invNo},${date},${cust},${phone},${taxable},${cgst},${sgst},${igst},${grand},${paid},${due}\r\n`;
+    });
+
+    downloadCsvBlob(`Sales_Report_${todayStr}.csv`, csv);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("📁 Today's sales report downloaded as CSV!", 3000);
+    }
+    return;
+  }
+
+  let text = `🏛️ *${company}*\n`;
+  text += `📊 *DAILY SALES & GST SUMMARY*\n`;
+  text += `📅 *Date:* ${todayFormatted}\n`;
+  text += `-----------------------------------\n`;
+  text += `🧾 *Total Bills:* ${todayInvoices.length}\n`;
+  text += `📦 *Taxable Turnover:* ₹ ${formatCurrency(totalTaxable)}\n`;
+  if (totalCgst > 0) text += `🏛️ *CGST (Central):* ₹ ${formatCurrency(totalCgst)}\n`;
+  if (totalSgst > 0) text += `🏛️ *SGST (State):* ₹ ${formatCurrency(totalSgst)}\n`;
+  if (totalIgst > 0) text += `🌐 *IGST (Inter-state):* ₹ ${formatCurrency(totalIgst)}\n`;
+  text += `-----------------------------------\n`;
+  text += `💰 *Gross Revenue:* ₹ ${formatCurrency(totalGrand)}\n`;
+  text += `✅ *Collected / Paid:* ₹ ${formatCurrency(totalPaid)}\n`;
+  if (totalDue > 0) {
+    text += `🔴 *Pending Receivables:* ₹ ${formatCurrency(totalDue)}\n`;
+  }
+  text += `-----------------------------------\n`;
+  text += `_Auto-generated by Aaryan Aqua Billing System_`;
+
+  if (action === 'copy') {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast("📋 Daily sales summary copied to clipboard!", 3000);
+        }
+      });
+    } else {
+      prompt("Copy Sales Summary:", text);
+    }
+  } else if (action === 'whatsapp') {
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    openWhatsAppDirect(waUrl);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("📲 Daily sales summary sent to WhatsApp!", 3000);
+    }
+  }
+};
+
+// Item 3: Customer Outstanding Balances Ledger
+window.shareOutstandingDuesAction = function(action) {
+  const company = (globalSettings?.company?.name || "AARYAN AQUA NEEDS").toUpperCase();
+  const upi = (globalSettings?.upiId || "7386262139@upi").trim();
+  const todayFormatted = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  // Map outstanding dues by party name / phone
+  const duesMap = {};
+  (Array.isArray(invoicesDb) ? invoicesDb : []).forEach(inv => {
+    const det = inv.details || inv;
+    const balance = Number(det.balanceDue !== undefined ? det.balanceDue : ((det.totalAmount || det.total || 0) - (det.paidAmount || 0)));
+    if (balance > 0) {
+      const custName = (det.buyer?.name || inv.customerName || 'Walk-in Customer').trim();
+      const phone = (det.buyer?.phone || inv.customerPhone || '').trim();
+      const key = custName + "_" + phone;
+      if (!duesMap[key]) {
+        duesMap[key] = {
+          name: custName,
+          phone: phone,
+          totalDue: 0,
+          invoices: []
+        };
+      }
+      duesMap[key].totalDue += balance;
+      duesMap[key].invoices.push({
+        invNo: det.invoiceNo || 'INV',
+        balance: balance
+      });
+    }
+  });
+
+  const dueCustomers = Object.values(duesMap).sort((a, b) => b.totalDue - a.totalDue);
+
+  if (dueCustomers.length === 0) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🎉 Excellent! There are no outstanding customer receivables.", "success");
+    }
+    return;
+  }
+
+  const overallDues = dueCustomers.reduce((acc, c) => acc + c.totalDue, 0);
+
+  if (action === 'csv') {
+    let csv = "Customer Name,Phone Number,Number of Invoices,Total Outstanding Due (INR)\r\n";
+    dueCustomers.forEach(c => {
+      const name = `"${c.name.replace(/"/g, '""')}"`;
+      const phone = `"${c.phone}"`;
+      const invCount = c.invoices.length;
+      const due = c.totalDue.toFixed(2);
+      csv += `${name},${phone},${invCount},${due}\r\n`;
+    });
+    downloadCsvBlob(`Customer_Outstanding_Ledger_${new Date().toISOString().slice(0, 10)}.csv`, csv);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("📁 Customer dues ledger exported as CSV!", 3000);
+    }
+    return;
+  }
+
+  let text = `🏛️ *${company}*\n`;
+  text += `🚨 *CUSTOMER OUTSTANDING DUES LEDGER*\n`;
+  text += `📅 *Date:* ${todayFormatted}\n`;
+  text += `-----------------------------------\n\n`;
+
+  dueCustomers.forEach((c, idx) => {
+    text += `${idx + 1}. *${c.name}*\n`;
+    if (c.phone) text += `   📞 ${c.phone}\n`;
+    text += `   🔴 Pending Balance: *₹ ${formatCurrency(c.totalDue)}* (${c.invoices.length} bill${c.invoices.length > 1 ? 's' : ''})\n\n`;
+  });
+
+  text += `-----------------------------------\n`;
+  text += `💰 *Total Outstanding Receivables:* ₹ ${formatCurrency(overallDues)}\n`;
+  text += `💳 *UPI Payment Collection ID:* ${upi}\n`;
+  text += `_Please follow up for prompt clearing._`;
+
+  if (action === 'copy') {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast("📋 Customer dues ledger copied to clipboard!", 3000);
+        }
+      });
+    } else {
+      prompt("Copy Dues Ledger:", text);
+    }
+  } else if (action === 'whatsapp') {
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    openWhatsAppDirect(waUrl);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("📲 Customer dues ledger sent to WhatsApp!", 3000);
+    }
+  }
+};
+
+// ----------------------------------------------------------------------------
+// 4. UNIVERSAL WEB SHARE & HARDWARE CAPABILITIES
+// ----------------------------------------------------------------------------
+
+function refreshDeviceCapabilitiesUI() {
+  const capShare = document.getElementById("cap-web-share-status");
+  if (capShare) {
+    if (navigator.share) {
+      capShare.textContent = "Supported (Nearby / Bluetooth / OS Apps)";
+      capShare.style.color = "#16a34a";
+    } else {
+      capShare.textContent = "Clipboard & Link Fallback (API not exposed)";
+      capShare.style.color = "#f59e0b";
+    }
+  }
+
+  const capWa = document.getElementById("cap-wa-bot-status");
+  if (capWa) {
+    if (whatsappBotStatus && whatsappBotStatus.connected) {
+      const p = (whatsappBotStatus.clientInfo && whatsappBotStatus.clientInfo.phone) || "918367047947";
+      capWa.textContent = `Connected (${p})`;
+      capWa.style.color = "#16a34a";
+    } else {
+      capWa.textContent = "Port 3001 Daemon Standby";
+      capWa.style.color = "#0284c7";
+    }
+  }
+
+  const capMesh = document.getElementById("cap-mesh-status");
+  if (capMesh) {
+    if (realtimeMeshClient && realtimeMeshClient.connected) {
+      capMesh.textContent = `Active (${activeBrokerName || "EMQX"} <20ms)`;
+      capMesh.style.color = "#16a34a";
+    } else {
+      capMesh.textContent = "Connecting to Mesh...";
+      capMesh.style.color = "#eab308";
+    }
+  }
+}
+
+window.testNativeWebShare = function() {
+  const company = globalSettings?.company?.name || "AARYAN AQUA NEEDS";
+  const shareData = {
+    title: `${company} - High-Speed Billing System`,
+    text: `🚀 Live GST Billing & Inventory Management at ${company}. Fast, automated, and multi-device connected!`,
+    url: window.location.href
+  };
+
+  if (navigator.share) {
+    navigator.share(shareData).then(() => {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("✅ Native device share sheet opened successfully!", 3500);
+      }
+    }).catch(err => {
+      if (err.name !== 'AbortError') {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast("⚠️ Native share aborted or not supported.", "warning");
+        }
+      }
+    });
+  } else {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(window.location.href);
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("📋 Web Share not available on desktop browser. Application link copied to clipboard!", 3500);
+      }
+    }
+  }
+};
+
+// ----------------------------------------------------------------------------
+// 5. UNIVERSAL INVOICE SHARE MODAL (PER-INVOICE MULTI-CHANNEL DISPATCH)
+// ----------------------------------------------------------------------------
+
+window.openUniversalInvoiceShareModal = function(invoiceId) {
+  let inv = null;
+  if (Array.isArray(invoicesDb)) {
+    inv = invoicesDb.find(i => String(i.id) === String(invoiceId) ||
+                              String(i.invoiceNo) === String(invoiceId) ||
+                              (i.details && (String(i.details.invoiceNo) === String(invoiceId) || String(i.details.invoiceNumber) === String(invoiceId))));
+  }
+
+  if (!inv && lastSavedInvoiceRecord) {
+    if (String(lastSavedInvoiceRecord.id) === String(invoiceId) ||
+        (lastSavedInvoiceRecord.details && String(lastSavedInvoiceRecord.details.invoiceNo) === String(invoiceId))) {
+      inv = lastSavedInvoiceRecord;
+    }
+  }
+
+  if (!inv) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Invoice details not found.", "warning");
+    }
+    return;
+  }
+
+  currentShareInvoiceRecord = inv;
+  const det = inv.details || inv;
+
+  const invNo = det.invoiceNo || det.invoiceNumber || 'INV';
+  const total = Number(det.totalAmount || det.total || 0);
+  const custName = det.buyer?.name || inv.customerName || 'Cash Customer';
+  const phone = det.buyer?.phone || inv.customerPhone || 'Not provided';
+
+  const modal = document.getElementById("universal-invoice-share-modal");
+  if (!modal) return;
+
+  const cardInv = document.getElementById("uism-card-inv-no");
+  if (cardInv) cardInv.textContent = `Invoice #${invNo}`;
+
+  const cardTot = document.getElementById("uism-card-total");
+  if (cardTot) cardTot.textContent = `₹ ${formatCurrency(total)}`;
+
+  const cardCust = document.getElementById("uism-card-customer");
+  if (cardCust) cardCust.textContent = `Customer: ${custName}`;
+
+  const cardPh = document.getElementById("uism-card-phone");
+  if (cardPh) cardPh.textContent = `Mobile: ${phone}`;
+
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+};
+
+window.closeUniversalInvoiceShareModal = function() {
+  const modal = document.getElementById("universal-invoice-share-modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.style.display = "none";
+};
+
+window.executeUniversalShare = async function(channel) {
+  if (!currentShareInvoiceRecord) return;
+  const inv = currentShareInvoiceRecord;
+  const det = inv.details || inv;
+
+  const company = (globalSettings?.company?.name || "AARYAN AQUA NEEDS").toUpperCase();
+  const upi = (globalSettings?.upiId || "7386262139@upi").trim();
+  const invNo = det.invoiceNo || det.invoiceNumber || 'INV';
+  const custName = det.buyer?.name || inv.customerName || 'Valued Customer';
+  const custPhone = det.buyer?.phone || inv.customerPhone || '';
+  const total = Number(det.totalAmount || det.total || 0);
+  const paid = Number(det.paidAmount !== undefined ? det.paidAmount : total);
+  const balance = Number(det.balanceDue !== undefined ? det.balanceDue : (total - paid));
+
+  // Build high quality formatted card
+  let cardText = `🏛️ *${company}*\n`;
+  cardText += `🧾 *TAX INVOICE #${invNo}*\n`;
+  cardText += `📅 *Date:* ${det.date || new Date().toISOString().slice(0, 10)}\n`;
+  cardText += `👤 *Customer:* ${custName}\n`;
+  cardText += `-----------------------------------\n`;
+
+  if (Array.isArray(det.items) && det.items.length > 0) {
+    det.items.forEach((item, i) => {
+      cardText += `${i + 1}. *${item.description || item.name}*\n`;
+      cardText += `   ${item.quantity || 1} ${item.unit || 'Kg'} × ₹${formatCurrency(item.rate || 0)} = ₹${formatCurrency(item.amount || ((item.quantity || 1) * (item.rate || 0)))}\n`;
+    });
+    cardText += `-----------------------------------\n`;
+  }
+
+  cardText += `💰 *Grand Total:* ₹ ${formatCurrency(total)}\n`;
+  if (balance <= 0) {
+    cardText += `✅ *Payment Status:* FULLY PAID (₹ ${formatCurrency(total)})\n`;
+  } else {
+    cardText += `✅ *Amount Paid:* ₹ ${formatCurrency(paid)}\n`;
+    cardText += `🔴 *PENDING BALANCE:* ₹ ${formatCurrency(balance)}\n`;
+  }
+  cardText += `💳 *UPI ID:* ${upi}\n\n`;
+  cardText += `_Thank you for your business!_`;
+
+  if (channel === 'whatsapp') {
+    window.closeUniversalInvoiceShareModal();
+    if (typeof shareInvoiceToWhatsApp === 'function') {
+      shareInvoiceToWhatsApp(inv.id || invNo);
+    } else {
+      const cleanPhone = custPhone ? custPhone.replace(/\D/g, '') : '';
+      const targetPhone = cleanPhone.length >= 10 ? (cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone) : '';
+      const waUrl = targetPhone ? `https://wa.me/${targetPhone}?text=${encodeURIComponent(cardText)}` : `https://wa.me/?text=${encodeURIComponent(cardText)}`;
+      openWhatsAppDirect(waUrl);
+    }
+  } else if (channel === 'copy') {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cardText).then(() => {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast(`📋 Formatted Invoice #${invNo} copied to clipboard!`, 3500);
+        }
+      });
+    } else {
+      prompt("Copy Invoice Card:", cardText);
+    }
+    window.closeUniversalInvoiceShareModal();
+  } else if (channel === 'email') {
+    const emailTo = (det.buyer?.email || '').trim();
+    const subject = `Tax Invoice #${invNo} - ${company}`;
+    const mailtoUrl = `mailto:${encodeURIComponent(emailTo)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(cardText)}`;
+    window.location.href = mailtoUrl;
+    window.closeUniversalInvoiceShareModal();
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`📧 Opening email client for Invoice #${invNo}...`, 3000);
+    }
+  } else if (channel === 'native') {
+    window.closeUniversalInvoiceShareModal();
+
+    // Check if we can compile and attach PDF file to native share sheet
+    if (navigator.share) {
+      try {
+        let pdfFile = null;
+        if (typeof html2pdf !== 'undefined') {
+          try {
+            populateA4PrintOverlay(det);
+            const printEl = document.getElementById("print-invoice-wrapper");
+            if (printEl) {
+              const opt = {
+                margin: [3, 3, 3, 3],
+                filename: `Invoice_${invNo}.pdf`,
+                image: { type: 'jpeg', quality: 0.95 },
+                html2canvas: { scale: 1.2, useCORS: true, logging: false },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+              };
+              printEl.style.display = "block";
+              const pdfBlob = await html2pdf().set(opt).from(printEl).outputPdf('blob');
+              printEl.style.display = "none";
+              pdfFile = new File([pdfBlob], `Invoice_${invNo}.pdf`, { type: 'application/pdf' });
+            }
+          } catch (pdfErr) {
+            console.warn("PDF generation for native share error:", pdfErr);
+          }
+        }
+
+        const sharePayload = {
+          title: `Invoice #${invNo} - ${company}`,
+          text: cardText
+        };
+
+        if (pdfFile && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+          sharePayload.files = [pdfFile];
+        }
+
+        await navigator.share(sharePayload);
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast("📲 Invoice shared via Native OS Share Sheet!", 3500);
+        }
+      } catch (shareErr) {
+        if (shareErr.name !== 'AbortError') {
+          console.warn("Native share error:", shareErr);
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(cardText);
+            if (typeof showFloatingToast === 'function') {
+              showFloatingToast("📋 Copied formatted invoice text to clipboard.", 3500);
+            }
+          }
+        }
+      }
+    } else {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(cardText);
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast("📋 Native Share Sheet is available on mobile/supported browsers. Bill text copied to clipboard!", 4000);
+        }
+      }
+    }
+  }
+};
+
