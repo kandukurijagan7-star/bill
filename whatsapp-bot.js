@@ -213,6 +213,10 @@ async function initClient(options = {}) {
           margin: 2,
           color: { dark: '#0a4b5c', light: '#ffffff' }
         });
+        try {
+          const b64 = qrCodeDataUrl.replace(/^data:image\/png;base64,/, '');
+          fs.writeFileSync(path.join(__dirname, 'whatsapp_qr.png'), b64, 'base64');
+        } catch (we) {}
       } catch (err) {
         console.error('QR generate error:', err);
       }

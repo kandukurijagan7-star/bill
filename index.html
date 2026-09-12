@@ -43,7 +43,7 @@
       });
     }
     // Build Version Enforcement: Clears stale caches when new build is deployed
-    window.__APP_BUILD_VERSION__ = "v315_clean_ui";
+    window.__APP_BUILD_VERSION__ = "v316_wa_login_qr";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -57,8 +57,8 @@
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.google.com">
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=315_clean_ui">
-  <script src="invoice_utils_v5.js?v=315_clean_ui"></script>
+  <link rel="stylesheet" href="index.css?v=316_wa_login_qr">
+  <script src="invoice_utils_v5.js?v=316_wa_login_qr"></script>
 </head>
 <body>
 
@@ -2696,20 +2696,20 @@
       <div class="modal-body" style="padding: 20px; max-height: 75vh; overflow-y: auto;">
         
         <!-- STATUS BANNER -->
-        <div id="wa-modal-status-card" class="wa-status-card wa-status-connected" style="margin-bottom: 16px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 12px 14px;">
+        <div id="wa-modal-status-card" class="wa-status-card" style="margin-bottom: 16px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 12px 14px;">
           <div class="wa-status-indicator" style="display: flex; align-items: center; gap: 8px;">
-            <span class="wa-pulse-dot" id="wa-status-dot" style="background: #16a34a;"></span>
-            <strong id="wa-modal-status-title" style="font-size: 13.5px; color: #166534;">WhatsApp 1-Click Direct Share Ready</strong>
+            <span class="wa-pulse-dot" id="wa-status-dot" style="background: #2563eb;"></span>
+            <strong id="wa-modal-status-title" style="font-size: 13.5px; color: #1d4ed8;">Scan WhatsApp Login QR Code</strong>
           </div>
-          <p id="wa-modal-status-desc" style="margin: 4px 0 0 0; font-size: 12px; color: #475569;">
-            Bills &amp; Google Drive PDF links open directly in customer WhatsApp with 1 click. Zero setup needed.
+          <p id="wa-modal-status-desc" style="margin: 4px 0 0 0; font-size: 12px; color: #1e40af;">
+            Point your WhatsApp camera at the QR code below to connect your device.
           </p>
         </div>
 
         <!-- TAB SWITCHER -->
         <div style="display: flex; gap: 8px; margin-bottom: 14px; background: #f1f5f9; padding: 4px; border-radius: 8px;">
           <button id="wa-tab-btn-bot" type="button" class="btn btn-sm" onclick="switchWhatsAppPairTab('bot')" style="flex: 1; font-weight: 700; font-size: 12px; background: #ffffff; color: #0a4b5c; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: none; border-radius: 6px; padding: 8px 10px;">
-            <i class="fa-solid fa-robot"></i> 1. WhatsApp Bot (Auto Dispatch)
+            <i class="fa-solid fa-qrcode"></i> 1. WhatsApp Login QR
           </button>
           <button id="wa-tab-btn-history" type="button" class="btn btn-sm" onclick="switchWhatsAppPairTab('history')" style="flex: 1; font-weight: 600; font-size: 12px; background: transparent; color: #64748b; border: none; border-radius: 6px; padding: 8px 10px;">
             <i class="fa-solid fa-clock-rotate-left"></i> 2. Delivery History
@@ -2755,45 +2755,46 @@
           </div>
         </div>
 
-        <!-- TAB 1: OFFICE PC BACKGROUND BOT (QR SCAN) -->
+        <!-- TAB 1: WHATSAPP LOGIN QR -->
         <div id="wa-tab-content-bot" style="display: block;">
-          <!-- CLOUD NOTICE (Visible when on Netlify) -->
-          <div id="wa-cloud-env-banner" style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px;">
-            <div style="display: flex; align-items: flex-start; gap: 10px;">
-              <i class="fa-solid fa-laptop-code" style="font-size: 18px; color: #2563eb; margin-top: 2px;"></i>
-              <div>
-                <strong style="color: #1e40af; font-size: 12.5px;">Online Cloud Web Version</strong>
-                <p style="margin: 3px 0 8px 0; font-size: 11.5px; color: #1e3a8a; line-height: 1.4;">
-                  For 100% automated background WhatsApp bot dispatching without browser popups, launch the Office Desktop App on this computer:
-                </p>
-                <div style="background: white; border: 1px solid #dbeafe; border-radius: 6px; padding: 8px 10px; font-size: 11.5px; color: #334155; line-height: 1.5;">
-                  <strong>Quick 1-Click Launch on Office PC:</strong><br>
-                  1. Double-click the <strong>"Aaryan Aqua Billing"</strong> shortcut on your Desktop.<br>
-                  2. Or run <strong style="color: #0891b2;">Start_WhatsApp_Bot.bat</strong> in your billing folder.<br>
-                  3. The dashboard opens at <code>http://localhost:3001</code> with the WhatsApp Bot connected automatically!
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- LOCAL BOT RUNNING CONTAINER (VISIBLE WHEN RUNNING ON LOCALHOST OR CONNECTED) -->
+          <!-- QR SCAN CONTAINER (Always displayed with WhatsApp Login QR) -->
           <div id="wa-bot-local-container">
-            <div id="wa-qr-container" style="display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 200px; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 12px; padding: 14px; margin-bottom: 12px; text-align: center;">
-              <div id="wa-qr-placeholder" style="color: #64748b;">
-                <i class="fa-solid fa-qrcode fa-3x" style="margin-bottom: 10px; color: #94a3b8;"></i>
-                <p style="margin: 0; font-size: 13px; font-weight: 600; color: #334155;">Office PC QR Pairing</p>
-                <p style="margin: 4px 0 10px 0; font-size: 11.5px; color: #64748b;">
-                  Launch the bot on your computer to generate a live QR code.
-                </p>
-                <button type="button" class="btn btn-sm btn-primary" onclick="initiateWhatsAppConnect(false)" style="background: #0891b2; border-color: #0891b2; color: white; padding: 6px 14px; font-weight: 600; font-size: 12px;">
-                  <i class="fa-solid fa-rotate"></i> Connect Local Bot
+            <div id="wa-qr-container" style="display: flex; flex-direction: column; justify-content: center; align-items: center; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 18px 14px; margin-bottom: 14px; text-align: center;">
+              
+              <!-- STEP-BY-STEP SCAN INSTRUCTIONS -->
+              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; width: 100%; max-width: 380px; text-align: left; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                <div style="font-weight: 700; font-size: 12.5px; color: #065f46; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-brands fa-whatsapp text-success" style="font-size: 15px;"></i> Scan with WhatsApp on your phone:
+                </div>
+                <ol style="margin: 0; padding-left: 18px; font-size: 11.5px; color: #334155; line-height: 1.6;">
+                  <li>Open <strong>WhatsApp</strong> on your mobile phone</li>
+                  <li>Tap <strong>Menu (⋮)</strong> or <strong>Settings</strong> &gt; <strong>Linked Devices</strong></li>
+                  <li>Tap <strong>Link a Device</strong> and point your phone camera at this QR code</li>
+                </ol>
+              </div>
+
+              <!-- LOADING INDICATOR -->
+              <div id="wa-qr-loading" style="display: none; color: #64748b; padding: 15px 0;">
+                <i class="fa-solid fa-spinner fa-spin fa-2x" style="margin-bottom: 8px; color: #0891b2;"></i>
+                <p style="margin: 0; font-size: 13px; font-weight: 500;">Refreshing WhatsApp QR Code...<br><span style="font-size: 11px; color: #94a3b8;">Connecting to WhatsApp Web</span></p>
+              </div>
+
+              <!-- LIVE WHATSAPP LOGIN QR CODE (Always prominently rendered) -->
+              <div style="position: relative; display: inline-block; background: #ffffff; padding: 12px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 14px rgba(0,0,0,0.08); margin-bottom: 12px;">
+                <img id="wa-qr-image" src="whatsapp_qr.png?v=316_wa_login_qr" alt="WhatsApp Login QR Code" style="display: block; width: 220px; height: 220px; object-fit: contain; border-radius: 6px;">
+              </div>
+
+              <!-- ACTION BUTTONS -->
+              <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 4px;">
+                <button type="button" class="btn btn-sm" onclick="initiateWhatsAppConnect(true)" style="background: #0891b2; color: #ffffff; border: none; border-radius: 6px; padding: 7px 14px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-arrows-rotate"></i> Refresh QR Code
+                </button>
+                <button type="button" class="btn btn-sm" onclick="fetchWhatsAppBotStatus()" style="background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 14px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-circle-check" style="color: #10b981;"></i> Check Status
                 </button>
               </div>
-              <div id="wa-qr-loading" style="display: none; color: #64748b;">
-                <i class="fa-solid fa-spinner fa-spin fa-2x" style="margin-bottom: 8px; color: #0891b2;"></i>
-                <p style="margin: 0; font-size: 13px; font-weight: 500;">Connecting to Local WhatsApp Engine...<br><span style="font-size: 11px; color: #94a3b8;">Waiting for local companion response</span></p>
-              </div>
-              <img id="wa-qr-image" src="" alt="WhatsApp QR Code" style="display: none; width: 220px; height: 220px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); background: white; padding: 6px;">
+
+              <div id="wa-qr-placeholder" style="display: none;"></div>
             </div>
 
             <!-- PHONE PAIRING CODE ACCORDION -->
@@ -3459,7 +3460,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=315_clean_ui"></script>
+  <script src="index_v5.js?v=316_wa_login_qr"></script>
 </body>
 </html>
 
