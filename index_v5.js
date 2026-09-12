@@ -1955,24 +1955,9 @@ function initializeApp() {
   // Smart Enterprise Session Persistence calculation on page load
   const isRemembered = localStorage.getItem("remember_me") === "true";
   const appAuthenticated = localStorage.getItem("app_authenticated") === "true" || sessionStorage.getItem("session_authenticated") === "true";
-  const storedLockState = localStorage.getItem("app_locked"); // "true", "false", or null
+  const storedLockState = localStorage.getItem("app_locked");
   const lastActiveTime = parseInt(localStorage.getItem("last_active_time") || `${Date.now()}`, 10);
-  const elapsedSeconds = (Date.now() - lastActiveTime) / 1000;
-
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlUser = urlParams.get('username') || urlParams.get('user');
-  const urlPwd = urlParams.get('password') || urlParams.get('pass') || urlParams.get('pwd');
-
-  let shouldLock = false;
-  if (urlUser || urlPwd) {
-    shouldLock = false;
-  } else if (storedLockState === "true") {
-    shouldLock = true;
-  } else if (lockTimerSeconds > 0 && elapsedSeconds > lockTimerSeconds) {
-    shouldLock = true;
-  } else if (!appAuthenticated && !isRemembered && storedLockState !== "false") {
-    shouldLock = false;
-  }
+  let shouldLock = (storedLockState === "true");
 
   if (shouldLock) {
     isLocked = true;
