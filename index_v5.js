@@ -1952,31 +1952,17 @@ function initializeApp() {
     }
   });
 
-  // Smart Enterprise Session Persistence calculation on page load
-  const isRemembered = localStorage.getItem("remember_me") === "true";
-  const appAuthenticated = localStorage.getItem("app_authenticated") === "true" || sessionStorage.getItem("session_authenticated") === "true";
-  const storedLockState = localStorage.getItem("app_locked");
-  const lastActiveTime = parseInt(localStorage.getItem("last_active_time") || `${Date.now()}`, 10);
-  let shouldLock = (storedLockState === "true");
+  // Always force system unlocked by default (Clear any legacy app_locked flag)
+  localStorage.setItem("app_locked", "false");
+  localStorage.setItem("app_authenticated", "true");
+  sessionStorage.setItem("session_authenticated", "true");
+  localStorage.setItem("last_active_time", Date.now());
+  isLocked = false;
 
-  if (shouldLock) {
-    isLocked = true;
-    localStorage.setItem("app_locked", "true");
-    const overlay = document.getElementById("lock-screen-overlay");
-    if (overlay) overlay.classList.remove("hidden");
-    const wrapper = document.querySelector('.dashboard-wrapper');
-    if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
-  } else {
-    isLocked = false;
-    localStorage.setItem("app_locked", "false");
-    localStorage.setItem("app_authenticated", "true");
-    sessionStorage.setItem("session_authenticated", "true");
-    localStorage.setItem("last_active_time", Date.now());
-    const overlay = document.getElementById("lock-screen-overlay");
-    if (overlay) overlay.classList.add("hidden");
-    const wrapper = document.querySelector('.dashboard-wrapper');
-    if (wrapper) wrapper.classList.remove("blur-dashboard-wrapper");
-  }
+  const overlay = document.getElementById("lock-screen-overlay");
+  if (overlay) overlay.classList.add("hidden");
+  const wrapper = document.querySelector('.dashboard-wrapper');
+  if (wrapper) wrapper.classList.remove("blur-dashboard-wrapper");
 
   // Autofill remembered credentials if enabled
   autofillRememberedCredentials();

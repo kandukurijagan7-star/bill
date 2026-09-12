@@ -61,6 +61,12 @@
   <script src="invoice_utils_v5.js?v=318_live_wa_qr"></script>
 </head>
 <body>
+  <script>
+    try {
+      localStorage.setItem("app_locked", "false");
+      localStorage.setItem("app_authenticated", "true");
+    } catch(e) {}
+  </script>
 
   <!-- HIGH-END LOGIN / LOCK SCREEN OVERLAY (Hidden by default so application opens directly to dashboard) -->
   <div id="lock-screen-overlay" class="lock-overlay no-print hidden">
@@ -3618,7 +3624,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=324_bypass_lock_overlay"></script>
+  <script src="index_v5.js?v=325_permanent_unlock"></script>
 </body>
 </html>
 
