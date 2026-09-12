@@ -11,6 +11,23 @@ const WA_STATUS_TOPIC = 'aaryan_aqua_gst_billing_2026/whatsapp_status';
 const WA_COMMANDS_TOPIC = 'aaryan_aqua_gst_billing_2026/whatsapp_commands';
 let mqttBridgeClient = null;
 
+process.on('uncaughtException', (err) => {
+  if (err && err.message && (err.message.includes('Execution context was destroyed') || err.message.includes('Target closed') || err.message.includes('Session closed'))) {
+    console.log('🔄 Handled WhatsApp Web navigation state change safely.');
+    return;
+  }
+  console.error('Bot uncaughtException:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason?.message || String(reason);
+  if (msg.includes('Execution context was destroyed') || msg.includes('Target closed') || msg.includes('Session closed')) {
+    console.log('🔄 Handled WhatsApp Web navigation state change safely.');
+    return;
+  }
+  console.error('Bot unhandledRejection:', reason);
+});
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -93,6 +110,31 @@ function broadcastStatus() {
   }
 }
 
+async function handleDisconnect() {
+  console.log('🚪 Disconnecting & unlinking WhatsApp device...');
+  try {
+    if (client) {
+      try { await client.logout(); } catch (e) {}
+      try { await client.destroy(); } catch (e) {}
+      client = null;
+    }
+  } catch (e) {}
+  try {
+    if (fs.existsSync(authPath)) {
+      fs.rmSync(authPath, { recursive: true, force: true });
+    }
+  } catch (e) {}
+  status = 'DISCONNECTED';
+  clientInfo = null;
+  qrCodeDataUrl = null;
+  rawQr = null;
+  pairingCode = null;
+  logActivity({ type: 'STATUS', status: 'DISCONNECTED', desc: 'Device unlinked by user' });
+  broadcastStatus();
+  console.log('🔄 Starting fresh WhatsApp engine for next connection in 1 second...');
+  setTimeout(() => initClient({ forceClean: true }), 1000);
+}
+
 function initMqttBridge() {
   const brokers = [
     'mqtt://broker.emqx.io:1883',
@@ -139,16 +181,7 @@ function initMqttBridge() {
           } else if (cmd.command === 'get_status' || cmd.action === 'get_status') {
             broadcastStatus();
           } else if (cmd.command === 'disconnect' || cmd.action === 'disconnect') {
-            try {
-              if (client) {
-                await client.logout();
-                await client.destroy();
-                client = null;
-              }
-            } catch (e) {}
-            status = 'DISCONNECTED';
-            clientInfo = null;
-            broadcastStatus();
+            await handleDisconnect();
           } else if (cmd.command === 'send_message' || cmd.action === 'send_message') {
             if (status === 'CONNECTED' && client && cmd.phone && cmd.text) {
               const chatId = formatPhone(cmd.phone);
@@ -457,15 +490,7 @@ app.post('/api/whatsapp/pair-code', async (req, res) => {
 });
 
 app.post('/api/whatsapp/disconnect', async (req, res) => {
-  try {
-    if (client) {
-      await client.logout();
-      await client.destroy();
-      client = null;
-    }
-  } catch (e) {}
-  status = 'DISCONNECTED';
-  clientInfo = null;
+  await handleDisconnect();
   res.json({ ok: true });
 });
 
