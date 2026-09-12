@@ -5,6 +5,11 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const path = require('path');
 const { exec } = require('child_process');
+const mqtt = require('mqtt');
+
+const WA_STATUS_TOPIC = 'aaryan_aqua_gst_billing_2026/whatsapp_status';
+const WA_COMMANDS_TOPIC = 'aaryan_aqua_gst_billing_2026/whatsapp_commands';
+let mqttBridgeClient = null;
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -68,7 +73,8 @@ try {
 const sseClients = new Set();
 
 function broadcastStatus() {
-  const payload = JSON.stringify(getStatus());
+  const currentStatus = getStatus();
+  const payload = JSON.stringify(currentStatus);
   for (const clientRes of sseClients) {
     try {
       clientRes.write(`data: ${payload}\n\n`);
@@ -76,6 +82,112 @@ function broadcastStatus() {
       sseClients.delete(clientRes);
     }
   }
+
+  // Publish to EMQX MQTT cloud mesh with retain: true for instant live sync on Netlify
+  if (mqttBridgeClient && mqttBridgeClient.connected) {
+    try {
+      mqttBridgeClient.publish(WA_STATUS_TOPIC, payload, { qos: 0, retain: true });
+    } catch (e) {
+      console.warn('MQTT broadcast status error:', e.message);
+    }
+  }
+}
+
+function initMqttBridge() {
+  const brokers = [
+    'mqtt://broker.emqx.io:1883',
+    'mqtt://broker.hivemq.com:1883',
+    'mqtt://test.mosquitto.org:1883'
+  ];
+  let brokerIdx = 0;
+
+  function connect() {
+    if (mqttBridgeClient) {
+      try { mqttBridgeClient.end(true); } catch (e) {}
+      mqttBridgeClient = null;
+    }
+    const broker = brokers[brokerIdx];
+    console.log(`🔌 Connecting WhatsApp Bot to Cloud Mesh Broker: ${broker}...`);
+
+    mqttBridgeClient = mqtt.connect(broker, {
+      clientId: 'wa_host_daemon_' + Math.random().toString(36).substring(2, 8),
+      clean: true,
+      keepalive: 30,
+      reconnectPeriod: 3000,
+      connectTimeout: 6000
+    });
+
+    mqttBridgeClient.on('connect', () => {
+      console.log(`⚡ WhatsApp Bot Cloud Mesh ACTIVE via ${broker}! Synchronizing live QR & commands to Netlify.`);
+      mqttBridgeClient.subscribe(WA_COMMANDS_TOPIC, { qos: 0 });
+      broadcastStatus();
+    });
+
+    mqttBridgeClient.on('message', async (topic, message) => {
+      if (topic === WA_COMMANDS_TOPIC) {
+        try {
+          const cmd = JSON.parse(message.toString());
+          console.log('📨 Received WhatsApp Cloud Command from Netlify:', cmd.command || cmd.action);
+
+          if (cmd.command === 'refresh_qr' || cmd.action === 'refresh_qr') {
+            initClient({ forceClean: true });
+          } else if (cmd.command === 'pair_code' || cmd.action === 'pair_code') {
+            if (cmd.phone) {
+              console.log('🔑 Remote pairing code requested for:', cmd.phone);
+              initClient({ forceClean: true, pairPhone: cmd.phone });
+            }
+          } else if (cmd.command === 'get_status' || cmd.action === 'get_status') {
+            broadcastStatus();
+          } else if (cmd.command === 'disconnect' || cmd.action === 'disconnect') {
+            try {
+              if (client) {
+                await client.logout();
+                await client.destroy();
+                client = null;
+              }
+            } catch (e) {}
+            status = 'DISCONNECTED';
+            clientInfo = null;
+            broadcastStatus();
+          } else if (cmd.command === 'send_message' || cmd.action === 'send_message') {
+            if (status === 'CONNECTED' && client && cmd.phone && cmd.text) {
+              const chatId = formatPhone(cmd.phone);
+              if (chatId) {
+                await client.sendMessage(chatId, cmd.text);
+                logActivity({ type: 'MESSAGE', phone: cmd.phone, status: 'SENT' });
+              }
+            }
+          } else if (cmd.command === 'send_invoice' || cmd.action === 'send_invoice') {
+            if (status === 'CONNECTED' && client && cmd.phone) {
+              const chatId = formatPhone(cmd.phone);
+              if (chatId) {
+                if (cmd.pdfBase64) {
+                  const cleanB64 = cmd.pdfBase64.replace(/^data:application\/pdf;base64,/, '');
+                  const media = new MessageMedia('application/pdf', cleanB64, cmd.filename || 'Invoice.pdf');
+                  await client.sendMessage(chatId, media, { caption: cmd.text || '', sendMediaAsDocument: true });
+                } else if (cmd.text) {
+                  await client.sendMessage(chatId, cmd.text);
+                }
+                logActivity({ type: 'INVOICE_PDF', phone: cmd.phone, filename: cmd.filename, status: 'SENT' });
+              }
+            }
+          }
+        } catch (e) {
+          console.error('MQTT command error:', e.message);
+        }
+      }
+    });
+
+    mqttBridgeClient.on('error', (err) => {
+      console.warn('MQTT mesh bridge error:', err.message);
+    });
+
+    mqttBridgeClient.on('close', () => {
+      brokerIdx = (brokerIdx + 1) % brokers.length;
+    });
+  }
+
+  connect();
 }
 
 function logActivity(entry) {
@@ -617,6 +729,9 @@ app.listen(PORT, () => {
   
   // Launch initial client
   initClient();
+
+  // Launch Cloud Mesh MQTT Bridge for Netlify
+  initMqttBridge();
 
   // Only open browser if explicitly instructed via AUTO_OPEN='true' and not in daemon mode
   if (process.env.NO_AUTO_OPEN !== 'true' && process.env.DAEMON !== 'true' && process.env.AUTO_OPEN === 'true') {

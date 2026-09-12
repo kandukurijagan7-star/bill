@@ -436,12 +436,23 @@ function initRealtimeMeshSync() {
     realtimeMeshClient.on('connect', () => {
       console.log(`⚡ High-Speed Cross-User Mesh Active via ${activeBrokerName}!`);
       realtimeMeshClient.subscribe(SYNC_MESH_TOPIC, { qos: 0 });
+      realtimeMeshClient.subscribe('aaryan_aqua_gst_billing_2026/whatsapp_status', { qos: 0 });
       // Announce presence and request state from any active peer
       broadcastInterTabEvent('SYNC_REQUEST', { requesterId: MY_SYNC_CLIENT_ID });
     });
 
     realtimeMeshClient.on('message', (topic, message) => {
       try {
+        if (topic === 'aaryan_aqua_gst_billing_2026/whatsapp_status') {
+          const waData = JSON.parse(message.toString());
+          if (waData && typeof waData === 'object') {
+            whatsappBotStatus = waData;
+            updateWhatsAppBotPillUI(whatsappBotStatus);
+            updateWhatsAppBotModalUI(whatsappBotStatus);
+          }
+          return;
+        }
+
         const msg = JSON.parse(message.toString());
         if (topic === SYNC_MESH_TOPIC) {
           if (!msg || msg.senderId === MY_SYNC_CLIENT_ID) return; // Prevent self-echo
@@ -6466,9 +6477,17 @@ async function fetchWhatsAppBotStatus() {
     updateWhatsAppBotPillUI(whatsappBotStatus);
     updateWhatsAppBotModalUI(whatsappBotStatus);
   } catch (err) {
-    whatsappBotStatus = { status: 'DISCONNECTED', isReady: false, webDirect: true };
-    updateWhatsAppBotPillUI(whatsappBotStatus);
-    updateWhatsAppBotModalUI(whatsappBotStatus);
+    if (realtimeMeshClient && realtimeMeshClient.connected) {
+      try {
+        realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({ command: 'get_status' }));
+      } catch (me) {}
+    }
+    // Only set default if no live status received via MQTT
+    if (!whatsappBotStatus || !whatsappBotStatus.status || whatsappBotStatus.status === 'DISCONNECTED') {
+      whatsappBotStatus = whatsappBotStatus || { status: 'DISCONNECTED', isReady: false, webDirect: true };
+      updateWhatsAppBotPillUI(whatsappBotStatus);
+      updateWhatsAppBotModalUI(whatsappBotStatus);
+    }
   }
 }
 
@@ -6935,6 +6954,39 @@ window.requestWhatsAppPairCode = async function() {
   if (codeBox) codeBox.style.display = "block";
   if (codeText) codeText.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size: 18px;"></i> Requesting 8-digit code...';
 
+  // Publish pairing request over EMQX Cloud Mesh
+  if (realtimeMeshClient && realtimeMeshClient.connected) {
+    try {
+      realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({
+        command: 'pair_code',
+        phone,
+        timestamp: Date.now()
+      }));
+    } catch (me) {}
+  }
+
+  let codeFound = false;
+  let attempts = 0;
+  const pollInterval = setInterval(async () => {
+    attempts++;
+    if (whatsappBotStatus && whatsappBotStatus.pairingCode) {
+      clearInterval(pollInterval);
+      codeFound = true;
+      if (codeText) {
+        const c = String(whatsappBotStatus.pairingCode).toUpperCase();
+        codeText.textContent = c.length === 8 ? `${c.slice(0, 4)} - ${c.slice(4)}` : c;
+      }
+      return;
+    }
+    await fetchWhatsAppBotStatus();
+    if (attempts > 20 && !codeFound) {
+      clearInterval(pollInterval);
+      if (codeText && codeText.textContent.includes("Requesting")) {
+        codeText.textContent = "Please try again or use QR";
+      }
+    }
+  }, 1000);
+
   try {
     const res = await fetch(getWhatsAppApiEndpoint('/api/whatsapp/pair-code'), {
       method: 'POST',
@@ -6944,30 +6996,9 @@ window.requestWhatsAppPairCode = async function() {
     const data = await res.json();
     if (data && data.ok) {
       showFloatingToast("⏳ Contacting WhatsApp server... Generating code.", 4000);
-      let attempts = 0;
-      const pollInterval = setInterval(async () => {
-        attempts++;
-        await fetchWhatsAppBotStatus();
-        if (whatsappBotStatus && whatsappBotStatus.pairingCode) {
-          clearInterval(pollInterval);
-          if (codeText) {
-            const c = String(whatsappBotStatus.pairingCode).toUpperCase();
-            codeText.textContent = c.length === 8 ? `${c.slice(0, 4)} - ${c.slice(4)}` : c;
-          }
-        } else if (attempts > 18) {
-          clearInterval(pollInterval);
-          if (codeText && codeText.textContent.includes("Requesting")) {
-            codeText.textContent = "Please try again or use QR";
-          }
-        }
-      }, 1000);
-    } else {
-      if (codeText) codeText.textContent = "Try again";
-      showFloatingToast(data.error || "⚠️ Failed to request pairing code. Please try QR scan.", 4000);
     }
   } catch (err) {
-    if (codeText) codeText.textContent = "Bot Offline";
-    showFloatingToast("⚠️ Companion bot is not running on localhost. Launch Start_WhatsApp_Bot.bat first.", 4000);
+    console.log("Local fetch unavailable, relying on Cloud Mesh MQTT:", err.message);
   }
 };
 
@@ -7240,10 +7271,21 @@ window.initiateWhatsAppConnect = async function(forceClean = false) {
   }
   if (timerLabel) timerLabel.textContent = "🔄 Refreshing WhatsApp Web QR...";
 
+  // Publish refresh command to Cloud Mesh MQTT
+  if (realtimeMeshClient && realtimeMeshClient.connected) {
+    try {
+      realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({
+        command: 'refresh_qr',
+        forceClean,
+        timestamp: Date.now()
+      }));
+    } catch (me) {}
+  }
+
   try {
     const endpoint = forceClean ? '/api/whatsapp/refresh-qr' : '/api/whatsapp/connect';
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
     const res = await fetch(getWhatsAppApiEndpoint(endpoint), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
