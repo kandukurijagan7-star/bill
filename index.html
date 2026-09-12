@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Aaryan Aqua Needs - GST Billing Dashboard</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -43,7 +43,7 @@
       });
     }
     // Build Version Enforcement: Clears stale caches when new build is deployed
-    window.__APP_BUILD_VERSION__ = "v306_dashboard_fit";
+    window.__APP_BUILD_VERSION__ = "v311_mobile_fit";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -57,8 +57,8 @@
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.google.com">
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=306">
-  <script src="invoice_utils_v5.js?v=306"></script>
+  <link rel="stylesheet" href="index.css?v=311_mobile_fit">
+  <script src="invoice_utils_v5.js?v=311_mobile_fit"></script>
 </head>
 <body>
 
@@ -3248,6 +3248,33 @@
     </div>
   </div>
 
-  <script src="index_v5.js?v=310_advanced_sharing"></script>
+  <!-- DOCKED MOBILE BOTTOM NAVIGATION BAR -->
+  <nav class="mobile-bottom-nav no-print" id="mobile-bottom-nav" aria-label="Mobile Navigation">
+    <button type="button" class="mobile-bottom-nav-item active" data-bottom-tab="dashboard" onclick="switchTab('dashboard')">
+      <i class="fa-solid fa-chart-line"></i>
+      <span>Dashboard</span>
+    </button>
+    <button type="button" class="mobile-bottom-nav-item" data-bottom-tab="history" onclick="switchTab('history')">
+      <i class="fa-solid fa-clock-rotate-left"></i>
+      <span>History</span>
+    </button>
+    <button type="button" class="mobile-bottom-nav-fab" data-bottom-tab="billing" onclick="switchTab('billing')" title="New GST Bill">
+      <div class="fab-circle">
+        <i class="fa-solid fa-plus"></i>
+      </div>
+      <span>New Bill</span>
+    </button>
+    <button type="button" class="mobile-bottom-nav-item" data-bottom-tab="products" onclick="switchTab('products')">
+      <i class="fa-solid fa-cubes"></i>
+      <span>Products</span>
+    </button>
+    <button type="button" class="mobile-bottom-nav-item" onclick="toggleMobileSidebar()" title="Open Full Menu">
+      <i class="fa-solid fa-bars"></i>
+      <span>Menu</span>
+    </button>
+  </nav>
+
+  <script src="index_v5.js?v=311_mobile_fit"></script>
 </body>
 </html>
+

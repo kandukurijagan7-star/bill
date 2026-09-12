@@ -2513,6 +2513,18 @@ window.switchTab = function(tabName) {
     }
   });
 
+  // Sync docked mobile bottom nav bar
+  try {
+    const bottomNavItems = document.querySelectorAll(".mobile-bottom-nav-item, .mobile-bottom-nav-fab");
+    bottomNavItems.forEach(btn => {
+      if (btn.getAttribute("data-bottom-tab") === tabName) {
+        btn.classList.add("active");
+      } else {
+        btn.classList.remove("active");
+      }
+    });
+  } catch (e) {}
+
   elements.views.forEach(view => {
     if (view.id === `view-${tabName}`) {
       view.classList.remove("hidden");

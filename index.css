@@ -5936,3 +5936,396 @@ body {
   border-color: #10b981 !important;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* ==========================================================================
+   ULTRA-RESPONSIVE MOBILE ENGINE & DOCKED BOTTOM NAVIGATION (<= 768px & <= 480px)
+   ========================================================================== */
+
+/* Bottom navigation bar hidden by default on desktop */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* 1. Viewport & Layout Containment */
+  html, body {
+    overflow-x: hidden !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    position: relative;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .dashboard-wrapper {
+    overflow-x: hidden !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    min-height: 100vh;
+  }
+
+  /* Padding for main content to avoid bottom nav bar overlap */
+  .main-content {
+    width: 100% !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px)) !important;
+    min-width: 0 !important;
+  }
+
+  .content-view {
+    padding: 12px 10px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 2. Top Header & Meta Pills Containment */
+  .content-header {
+    padding: 8px 12px !important;
+    min-height: 52px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 100 !important;
+    background: rgba(255, 255, 255, 0.96) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+  }
+
+  .header-left {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    overflow: hidden !important;
+  }
+
+  .breadcrumbs {
+    display: none !important;
+  }
+
+  .content-header h2 {
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    margin: 0 !important;
+    line-height: 1.2 !important;
+  }
+
+  .mobile-nav-toggle {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 8px !important;
+    background: #f1f5f9 !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #334155 !important;
+    font-size: 16px !important;
+    cursor: pointer !important;
+    flex-shrink: 0 !important;
+  }
+
+  .app-top-header-meta {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    flex-shrink: 0 !important;
+  }
+
+  #current-datetime {
+    display: none !important;
+  }
+
+  /* Compact Pills for Mobile */
+  .stock-alert-pill,
+  .cloud-sync-pill,
+  .whatsapp-sync-pill,
+  .telegram-sync-pill,
+  .data-share-pill,
+  .audio-fx-pill {
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    border-radius: 16px !important;
+    box-sizing: border-box !important;
+  }
+
+  .stock-alert-pill span,
+  .cloud-sync-pill #sync-status-text,
+  .whatsapp-sync-pill span:not(.radar-dot),
+  .telegram-sync-pill span:not(.radar-dot),
+  .data-share-pill span,
+  .audio-fx-pill span {
+    display: none !important;
+  }
+
+  /* 3. Docked Bottom Navigation Bar */
+  .mobile-bottom-nav {
+    display: flex !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: calc(58px + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+    background: rgba(15, 23, 42, 0.95) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25) !important;
+    z-index: 2147483630 !important;
+    align-items: center !important;
+    justify-content: space-around !important;
+    box-sizing: border-box !important;
+  }
+
+  .mobile-bottom-nav-item {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 3px !important;
+    background: transparent !important;
+    border: none !important;
+    color: #94a3b8 !important;
+    padding: 6px 2px !important;
+    font-size: 10.5px !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    touch-action: manipulation !important;
+    transition: all 0.18s ease !important;
+    text-decoration: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    min-height: 46px !important;
+  }
+
+  .mobile-bottom-nav-item i {
+    font-size: 16px !important;
+    transition: transform 0.18s ease !important;
+  }
+
+  .mobile-bottom-nav-item.active {
+    color: #38bdf8 !important;
+  }
+
+  .mobile-bottom-nav-item.active i {
+    transform: scale(1.15) !important;
+    color: #38bdf8 !important;
+  }
+
+  .mobile-bottom-nav-fab {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: transparent !important;
+    border: none !important;
+    color: #38bdf8 !important;
+    padding: 0 !important;
+    cursor: pointer !important;
+    touch-action: manipulation !important;
+    position: relative !important;
+    margin-top: -14px !important;
+    text-decoration: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  .mobile-bottom-nav-fab .fab-circle {
+    width: 46px !important;
+    height: 46px !important;
+    border-radius: 50% !important;
+    background: linear-gradient(135deg, #06b6d4 0%, #2563eb 100%) !important;
+    color: #ffffff !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 0 4px 14px rgba(6, 182, 212, 0.45) !important;
+    font-size: 19px !important;
+    margin-bottom: 2px !important;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  .mobile-bottom-nav-fab:active .fab-circle {
+    transform: scale(0.92) !important;
+  }
+
+  .mobile-bottom-nav-fab span {
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    color: #38bdf8 !important;
+    letter-spacing: 0.02em !important;
+  }
+
+  /* 4. Form Inputs & iOS Safari Auto-Zoom Prevention */
+  input[type="text"],
+  input[type="number"],
+  input[type="date"],
+  input[type="search"],
+  input[type="password"],
+  select,
+  textarea {
+    font-size: 16px !important; /* Prevents unwanted iOS Safari page zoom */
+    min-height: 40px !important;
+    border-radius: 8px !important;
+  }
+
+  /* 5. Smart Product Combobox Popover Mobile Fit */
+  .smart-product-popover {
+    min-width: 0 !important;
+    width: 100% !important;
+    max-width: calc(100vw - 24px) !important;
+    left: 0 !important;
+    right: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 6. Modals Mobile Fit */
+  .modal-overlay {
+    padding: 10px !important;
+    box-sizing: border-box !important;
+  }
+
+  .modal-box,
+  .modal-card {
+    width: 100% !important;
+    max-width: 95vw !important;
+    max-height: 88vh !important;
+    margin: auto !important;
+    overflow-y: auto !important;
+    border-radius: 14px !important;
+    box-sizing: border-box !important;
+  }
+
+  #panel-data-share-p2p > div {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  #p2p-sync-qrcode {
+    max-width: 150px !important;
+    height: auto !important;
+  }
+
+  /* 7. Action Buttons & Tables Mobile Scrolling */
+  .table-responsive {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    border-radius: 8px !important;
+    max-width: 100% !important;
+  }
+
+  .actions-cell {
+    white-space: nowrap !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    justify-content: flex-start !important;
+  }
+
+  .action-btn {
+    min-width: 34px !important;
+    min-height: 34px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 13px !important;
+    border-radius: 6px !important;
+    touch-action: manipulation !important;
+  }
+
+  /* Summary Card full-width on mobile */
+  .summary-card {
+    position: static !important;
+    width: 100% !important;
+    margin-top: 12px !important;
+    box-sizing: border-box !important;
+  }
+
+  .summary-actions-grid button {
+    min-height: 44px !important;
+    font-size: 13.5px !important;
+  }
+
+  .summary-btn-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  /* Filter Bars on History & Products */
+  .history-filter-bar,
+  .party-action-bar,
+  .product-search-actions {
+    flex-direction: column !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+  }
+}
+
+/* Extra Compact Phones (<= 480px, e.g. iPhone SE, compact Galaxy) */
+@media (max-width: 480px) {
+  .content-header h2 {
+    font-size: 14.5px !important;
+  }
+
+  .dashboard-hero-card {
+    padding: 14px 12px !important;
+  }
+
+  .hero-text-content h2 {
+    font-size: 18px !important;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  .stat-card {
+    padding: 10px !important;
+    gap: 8px !important;
+  }
+
+  .stat-icon {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 15px !important;
+  }
+
+  .stat-details h3 {
+    font-size: 15px !important;
+  }
+
+  .stat-label {
+    font-size: 9.5px !important;
+  }
+
+  .stat-trend {
+    display: none !important;
+  }
+
+  /* Floating Toast containment */
+  #app-floating-toast-container {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important;
+    max-width: calc(100vw - 24px) !important;
+    width: auto !important;
+  }
+}
+
