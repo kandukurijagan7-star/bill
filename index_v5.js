@@ -7994,6 +7994,86 @@ window.shareBalanceQrWhatsApp = function() {
   sendWhatsAppPaymentReminder(inv.id);
 };
 
+window.markBalanceQrPaidAndSendWhatsApp = function() {
+  if (!currentBalanceQrInv || !currentBalanceQrInv.inv) {
+    if (typeof showNotification === "function") showNotification("No active invoice selected.", "warning");
+    return;
+  }
+
+  const inv = currentBalanceQrInv.inv;
+  const settledAmount = Number(inv.balanceDue || (inv.total - (inv.paidAmount || 0)));
+
+  // Update Invoice Record to Paid
+  inv.paidAmount = Number(inv.total || 0);
+  inv.balanceDue = 0;
+  inv.paymentStatus = "Paid";
+  inv.paymentMode = inv.paymentMode || "UPI / Online";
+
+  if (inv.details) {
+    inv.details.paidAmount = inv.paidAmount;
+    inv.details.balanceDue = 0;
+    inv.details.paymentStatus = "Paid";
+    inv.details.paymentMode = inv.paymentMode;
+  }
+
+  if (!inv.paymentHistory) inv.paymentHistory = [];
+  inv.paymentHistory.push({
+    date: new Date().toISOString(),
+    amount: settledAmount,
+    mode: inv.paymentMode,
+    source: "Balance QR Modal Mark Paid"
+  });
+
+  // Persist & Sync to LocalStorage, IndexedDB, Google Sheets & EMQX Mesh
+  if (typeof saveToLocalStorage === "function") saveToLocalStorage();
+  if (typeof saveInvoicesToDB === "function") saveInvoicesToDB();
+  if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
+    try { window.AaryanDB.saveInvoice(inv); } catch (e) {}
+  }
+  if (typeof syncDatabaseToServer === 'function') {
+    try { syncDatabaseToServer("invoices", inv); } catch (e) {}
+  }
+  if (typeof renderInvoicesTable === "function") renderInvoicesTable();
+  if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
+  if (typeof updateDashboardStats === "function") updateDashboardStats();
+  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+
+  // Mesh MQTT Sync
+  if (typeof publishMeshDatabaseUpdate === "function") {
+    try { publishMeshDatabaseUpdate("invoicesDb", inv); } catch (e) { console.warn(e); }
+  }
+
+  // Automatic WhatsApp Receipt & Paid PDF Dispatch
+  const custPhone = inv.buyerPhone || inv.details?.buyer?.phone || inv.phone || "";
+  if (custPhone) {
+    const msg = `✅ *Payment Received & Verified!*\n\n` +
+      `🧾 *Invoice No:* ${inv.invoiceNo}\n` +
+      `👤 *Customer:* ${inv.buyerName || inv.details?.buyer?.name || 'Customer'}\n` +
+      `💰 *Amount Paid:* ₹ ${formatCurrency(settledAmount)}\n` +
+      `💳 *Payment Mode:* ${inv.paymentMode}\n` +
+      `📊 *Remaining Balance:* ₹ 0.00 (Fully Paid)\n\n` +
+      `Thank you for your business with *Aaryan Aqua Needs*! 🌊`;
+
+    if (typeof dispatchWhatsAppBotMessage === "function") {
+      dispatchWhatsAppBotMessage(custPhone, msg);
+    }
+
+    setTimeout(() => {
+      if (typeof autoDispatchInvoiceToWhatsApp === "function") {
+        autoDispatchInvoiceToWhatsApp(inv.details || inv);
+      } else if (typeof shareInvoicePdfNative === "function") {
+        shareInvoicePdfNative(inv.details || inv, null, false, null);
+      }
+    }, 800);
+  }
+
+  if (typeof showFloatingToast === "function") {
+    showFloatingToast(`✅ Invoice #${inv.invoiceNo} marked PAID! Balance settled to ₹0.00 & WhatsApp receipt sent!`, "success");
+  }
+
+  closeBalanceQrModal();
+};
+
 window.sendWhatsAppPaymentReminder = async function(id, btnEl = null) {
   const inv = invoicesDb.find(i => i.id === id);
   if (!inv) return;

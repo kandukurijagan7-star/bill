@@ -2558,9 +2558,12 @@
           <i class="fa-solid fa-mobile-screen-button"></i> Scan with GPay, PhonePe, Paytm or BHIM
         </p>
       </div>
-      <div class="modal-footer" style="justify-content: center; gap: 8px; padding-top: 0;">
-        <button class="btn btn-secondary" onclick="closeBalanceQrModal()">Close</button>
-        <button class="btn btn-primary" onclick="shareBalanceQrWhatsApp()"><i class="fa-brands fa-whatsapp"></i> Share Reminder</button>
+      <div class="modal-footer" style="justify-content: center; gap: 8px; padding-top: 0; flex-wrap: wrap;">
+        <button type="button" class="btn btn-secondary" onclick="closeBalanceQrModal()">Close</button>
+        <button type="button" class="btn btn-primary" onclick="shareBalanceQrWhatsApp()"><i class="fa-brands fa-whatsapp"></i> Share Reminder</button>
+        <button type="button" class="btn btn-success" onclick="markBalanceQrPaidAndSendWhatsApp()" style="background: linear-gradient(135deg, #16a34a, #15803d); border: none; color: #ffffff; font-weight: 700;">
+          <i class="fa-solid fa-circle-check"></i> Mark Paid &amp; Send WhatsApp
+        </button>
       </div>
     </div>
   </div>
