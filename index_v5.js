@@ -6150,12 +6150,12 @@ function updateWhatsAppBotPillUI(data) {
     pill.classList.add("waiting-qr");
     if (radarDot) radarDot.style.display = "none";
     if (statusIcon) {
-      statusIcon.className = data.status === "CODE_READY" ? "fa-solid fa-key" : "fa-solid fa-qrcode";
+      statusIcon.className = "fa-brands fa-whatsapp";
       statusIcon.style.display = "inline-block";
-      statusIcon.style.color = "#d97706";
+      statusIcon.style.color = "#16a34a";
     }
-    statusText.textContent = data.status === "CODE_READY" ? "Enter WA Code" : "Scan WA QR";
-    pill.title = "WhatsApp Bot pairing required - Click to view QR or enter pairing code";
+    statusText.textContent = "WhatsApp";
+    pill.title = "WhatsApp Bot (Click for options)";
     return;
   }
 
@@ -6166,10 +6166,10 @@ function updateWhatsAppBotPillUI(data) {
   if (statusIcon) {
     statusIcon.className = "fa-brands fa-whatsapp";
     statusIcon.style.display = "inline-block";
-    statusIcon.style.color = "#94a3b8";
+    statusIcon.style.color = "#16a34a";
   }
-  statusText.textContent = "Bot Offline";
-  pill.title = "WhatsApp Bot Offline - Click to start & connect background bot";
+  statusText.textContent = "WhatsApp";
+  pill.title = "WhatsApp Bot & Direct Dispatch";
 }
 
 function updateWhatsAppBotModalUI(data) {

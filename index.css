@@ -5782,41 +5782,10 @@ body {
   transform: translateY(-1px);
 }
 
-/* --- Floating Keyboard Shortcuts Pill & Modal --- */
-.floating-shortcuts-pill {
-  position: fixed;
-  bottom: 18px;
-  right: 18px;
-  z-index: 1000;
-  background: #0f172a;
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 20px;
-  padding: 6px 14px;
-  font-size: 11px;
-  font-weight: 700;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.2s ease;
-  user-select: none;
-}
-
-.floating-shortcuts-pill:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.4);
-  background: #1e293b;
-}
-
-.floating-shortcuts-pill kbd {
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 10px;
-  font-family: inherit;
-  color: #38bdf8;
+/* --- Floating Keyboard Shortcuts Pill & Floating WhatsApp Button (Hidden per user preference) --- */
+.floating-shortcuts-pill,
+.floating-whatsapp-btn {
+  display: none !important;
 }
 
 .shortcuts-grid {
@@ -6571,61 +6540,7 @@ body {
   animation: fadeIn 0.2s ease;
 }
 
-/* ==========================================================================
-   WHATSAPP DIRECT CHAT QR & FLOATING QUICK ACCESS LAUNCHER
-   ========================================================================== */
-.floating-whatsapp-btn {
-  position: fixed;
-  bottom: 24px;
-  left: 24px;
-  z-index: 999;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px 8px 10px;
-  background: linear-gradient(135deg, #25d366 0%, #128c7e 100%);
-  color: #ffffff;
-  border-radius: 50px;
-  box-shadow: 0 4px 18px rgba(37, 211, 102, 0.4), 0 2px 5px rgba(0, 0, 0, 0.12);
-  cursor: pointer;
-  user-select: none;
-  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease, background 0.22s ease;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  backdrop-filter: blur(6px);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.floating-whatsapp-btn:hover {
-  transform: translateY(-2px) scale(1.03);
-  box-shadow: 0 8px 24px rgba(37, 211, 102, 0.5), 0 4px 10px rgba(0, 0, 0, 0.15);
-  color: #ffffff;
-}
-
-.floating-whatsapp-btn:active {
-  transform: scale(0.97);
-}
-
-.floating-whatsapp-icon {
-  width: 32px;
-  height: 32px;
-  background: rgba(255, 255, 255, 0.24);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 17px;
-  color: #ffffff;
-  flex-shrink: 0;
-}
-
-.floating-whatsapp-text {
-  font-size: 12.5px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-/* Quick Message Preset Chips in WhatsApp QR Hub */
+/* Quick Message Preset Chips in QR Hub */
 .wa-preset-chip {
   background: #f1f5f9;
   border: 1px solid #cbd5e1;
@@ -6656,25 +6571,5 @@ body {
   box-shadow: 0 1px 4px rgba(22, 163, 74, 0.2) !important;
 }
 
-/* Mobile responsive positioning for Floating WhatsApp Launcher */
-@media (max-width: 768px) {
-  .floating-whatsapp-btn {
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
-    left: 12px !important;
-    padding: 7px 12px 7px 8px !important;
-    box-shadow: 0 4px 14px rgba(37, 211, 102, 0.45) !important;
-  }
-  .floating-whatsapp-icon {
-    width: 28px !important;
-    height: 28px !important;
-    font-size: 15px !important;
-  }
-  .floating-whatsapp-text {
-    font-size: 11.5px !important;
-  }
-  .floating-shortcuts-pill {
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
-  }
-}
 
 

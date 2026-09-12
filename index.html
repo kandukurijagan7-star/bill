@@ -43,7 +43,7 @@
       });
     }
     // Build Version Enforcement: Clears stale caches when new build is deployed
-    window.__APP_BUILD_VERSION__ = "v314_wa_qr";
+    window.__APP_BUILD_VERSION__ = "v315_clean_ui";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -57,8 +57,8 @@
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.google.com">
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=314_wa_qr">
-  <script src="invoice_utils_v5.js?v=314_wa_qr"></script>
+  <link rel="stylesheet" href="index.css?v=315_clean_ui">
+  <script src="invoice_utils_v5.js?v=315_clean_ui"></script>
 </head>
 <body>
 
@@ -156,12 +156,6 @@
         <button class="nav-item" data-tab="settings">
           <i class="fa-solid fa-gear"></i> Settings
         </button>
-        <button type="button" class="nav-item" onclick="openWebsiteQrModal()" title="Website QR Code - Scan to open on mobile">
-          <i class="fa-solid fa-qrcode" style="color: #38bdf8;"></i> Website QR Code
-        </button>
-        <button type="button" class="nav-item" onclick="openWebsiteQrModal('whatsapp')" title="WhatsApp QR Code - Scan to chat directly">
-          <i class="fa-brands fa-whatsapp" style="color: #22c55e;"></i> WhatsApp QR
-        </button>
       </nav>
 
       <div class="sidebar-profile">
@@ -219,10 +213,6 @@
             <i class="fa-solid fa-share-nodes" style="color: #0284c7;"></i>
             <span id="data-share-pill-text">Share Data</span>
           </div>
-          <div id="live-website-qr-pill" class="website-qr-pill cursor-pointer" onclick="openWebsiteQrModal()" title="Website QR Code (Scan to open on mobile)">
-            <i class="fa-solid fa-qrcode" style="color: #6366f1;"></i>
-            <span id="website-qr-pill-text">Website QR</span>
-          </div>
           <div id="live-audio-fx-pill" class="audio-fx-pill active cursor-pointer" onclick="toggleAudioFeedback()" title="Billing Audio FX (Click to Mute / Unmute)">
             <i class="fa-solid fa-volume-high" id="audio-fx-icon"></i>
             <span id="audio-fx-text">Audio</span>
@@ -249,12 +239,6 @@
             </button>
             <button class="btn btn-secondary btn-hero" onclick="switchTab('reports')">
               <i class="fa-solid fa-chart-pie"></i> View Reports
-            </button>
-            <button class="btn btn-secondary btn-hero" onclick="openWebsiteQrModal()" title="Website QR Code (Scan to open on phone)">
-              <i class="fa-solid fa-qrcode"></i> Website QR
-            </button>
-            <button class="btn btn-secondary btn-hero" onclick="openWebsiteQrModal('whatsapp')" title="WhatsApp QR Code (Scan to chat instantly)">
-              <i class="fa-brands fa-whatsapp" style="color: #16a34a;"></i> WhatsApp QR
             </button>
           </div>
         </div>
@@ -2720,14 +2704,6 @@
           <p id="wa-modal-status-desc" style="margin: 4px 0 0 0; font-size: 12px; color: #475569;">
             Bills &amp; Google Drive PDF links open directly in customer WhatsApp with 1 click. Zero setup needed.
           </p>
-          <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
-            <button type="button" class="btn btn-xs" onclick="closeWhatsAppBotModal(); openWebsiteQrModal('whatsapp');" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
-              <i class="fa-solid fa-qrcode"></i> Scan WhatsApp QR Hub
-            </button>
-            <button type="button" class="btn btn-xs" onclick="openWhatsAppDirectChat()" style="background: #f0fdf4; border: 1px solid #86efac; color: #166534; padding: 6px 12px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
-              <i class="fa-brands fa-whatsapp"></i> Chat with Us (+91 8367047947)
-            </button>
-          </div>
         </div>
 
         <!-- TAB SWITCHER -->
@@ -3100,20 +3076,6 @@
         <button type="button" class="btn btn-secondary" onclick="closeDatabaseTelemetryModal()" style="padding: 6px 16px; font-size: 12.5px; cursor: pointer;">Close</button>
       </div>
     </div>
-  </div>
-
-  <!-- FLOATING WHATSAPP QR QUICK ACCESS BUTTON -->
-  <div id="floating-whatsapp-btn" class="floating-whatsapp-btn cursor-pointer no-print" onclick="openWebsiteQrModal('whatsapp')" title="Scan WhatsApp QR Code or Chat">
-    <div class="floating-whatsapp-icon">
-      <i class="fa-brands fa-whatsapp"></i>
-    </div>
-    <span class="floating-whatsapp-text">WhatsApp QR</span>
-  </div>
-
-  <!-- FLOATING KEYBOARD SHORTCUTS BADGE (Bottom Right) -->
-  <div id="floating-shortcuts-pill" class="floating-shortcuts-pill cursor-pointer" onclick="openKeyboardShortcutsModal()" title="Billing Keyboard Shortcuts (Alt+/)">
-    <i class="fa-solid fa-bolt-lightning" style="color: #f59e0b;"></i>
-    <span>Shortcuts <kbd>Alt+/</kbd></span>
   </div>
 
   <!-- KEYBOARD SHORTCUTS MODAL -->
@@ -3497,7 +3459,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=314_wa_qr"></script>
+  <script src="index_v5.js?v=315_clean_ui"></script>
 </body>
 </html>
 
