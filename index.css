@@ -241,6 +241,35 @@
   background: rgba(14, 165, 233, 0.18) !important;
 }
 
+.website-qr-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  height: 30px !important;
+  padding: 0 11px !important;
+  border-radius: 20px !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  background: rgba(99, 102, 241, 0.12) !important;
+  color: #4f46e5 !important;
+  border: 1px solid rgba(99, 102, 241, 0.4) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  user-select: none !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  cursor: pointer !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+}
+
+.website-qr-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.25) !important;
+  background: rgba(99, 102, 241, 0.2) !important;
+}
+
 /* Radar pulse dot inside pill */
 .wa-radar-dot {
   width: 8px;
@@ -6086,7 +6115,8 @@ body {
   .whatsapp-sync-pill,
   .telegram-sync-pill,
   .data-share-pill,
-  .audio-fx-pill {
+  .audio-fx-pill,
+  .website-qr-pill {
     width: 30px !important;
     height: 30px !important;
     min-width: 30px !important;
@@ -6107,7 +6137,8 @@ body {
   .whatsapp-sync-pill i,
   .telegram-sync-pill i,
   .data-share-pill i,
-  .audio-fx-pill i {
+  .audio-fx-pill i,
+  .website-qr-pill i {
     font-size: 13px !important;
     margin: 0 !important;
   }
@@ -6117,7 +6148,8 @@ body {
   .whatsapp-sync-pill span:not(.radar-dot),
   .telegram-sync-pill span:not(.radar-dot):not(.tg-dot),
   .data-share-pill span,
-  .audio-fx-pill span {
+  .audio-fx-pill span,
+  .website-qr-pill span {
     display: none !important;
   }
 
@@ -6511,5 +6543,31 @@ body {
     max-width: calc(100vw - 24px) !important;
     width: auto !important;
   }
+}
+
+/* ==========================================================================
+   WEBSITE & APP QR HUB MODAL
+   ========================================================================== */
+.website-qr-card {
+  animation: modal-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.website-qr-tab-btn {
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.website-qr-tab-btn:hover {
+  background: #f1f5f9 !important;
+}
+
+.website-qr-tab-btn.active {
+  color: #0284c7 !important;
+  border-bottom: 2px solid #0284c7 !important;
+  background: #ffffff !important;
+}
+
+.website-qr-panel {
+  animation: fadeIn 0.2s ease;
 }
 

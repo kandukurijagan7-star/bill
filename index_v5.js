@@ -10704,3 +10704,456 @@ window.executeUniversalShare = async function(channel) {
   }
 };
 
+// ==========================================================================
+// OFFICIAL WEBSITE & APP QR CODE HUB
+// ==========================================================================
+let currentWebsiteQrUrl = "https://naqua.netlify.app";
+let currentShopUpiString = "upi://pay?pa=7386262139@upi&pn=Aaryan%20Aqua%20Needs&cu=INR";
+
+function getLiveWebsiteUrl() {
+  if (window.location.protocol === 'file:' || !window.location.origin || window.location.origin === 'null') {
+    return "https://naqua.netlify.app";
+  }
+  return window.location.origin + window.location.pathname;
+}
+
+window.openWebsiteQrModal = function(initialTab = 'website') {
+  const modal = document.getElementById("website-qr-modal");
+  if (!modal) return;
+
+  currentWebsiteQrUrl = getLiveWebsiteUrl();
+  const urlTextEl = document.getElementById("website-qr-url-text");
+  if (urlTextEl) urlTextEl.textContent = currentWebsiteQrUrl;
+
+  // Render Website QR
+  const websiteCanvas = document.getElementById("website-qr-canvas");
+  if (websiteCanvas && typeof QRious !== "undefined") {
+    try {
+      new QRious({
+        element: websiteCanvas,
+        value: currentWebsiteQrUrl,
+        size: 260,
+        level: 'H'
+      });
+    } catch (e) {
+      console.warn("Website QR render failed:", e);
+    }
+  }
+
+  // Render Shop UPI QR
+  const upiCanvas = document.getElementById("shop-upi-qr-canvas");
+  if (upiCanvas && typeof QRious !== "undefined") {
+    try {
+      new QRious({
+        element: upiCanvas,
+        value: currentShopUpiString,
+        size: 260,
+        level: 'H'
+      });
+    } catch (e) {
+      console.warn("Shop UPI QR render failed:", e);
+    }
+  }
+
+  modal.classList.remove("hidden");
+  window.switchWebsiteQrTab(initialTab);
+};
+
+window.closeWebsiteQrModal = function() {
+  const modal = document.getElementById("website-qr-modal");
+  if (modal) modal.classList.add("hidden");
+};
+
+window.switchWebsiteQrTab = function(tabName) {
+  const panelWebsite = document.getElementById("qr-panel-website");
+  const panelUpi = document.getElementById("qr-panel-upi");
+  const btnWebsite = document.getElementById("tab-btn-qr-website");
+  const btnUpi = document.getElementById("tab-btn-qr-upi");
+
+  if (tabName === 'upi') {
+    if (panelWebsite) panelWebsite.classList.add("hidden");
+    if (panelUpi) panelUpi.classList.remove("hidden");
+    if (btnWebsite) {
+      btnWebsite.classList.remove("active");
+      btnWebsite.style.color = "#64748b";
+      btnWebsite.style.borderBottomColor = "transparent";
+    }
+    if (btnUpi) {
+      btnUpi.classList.add("active");
+      btnUpi.style.color = "#059669";
+      btnUpi.style.borderBottomColor = "#059669";
+    }
+  } else {
+    if (panelWebsite) panelWebsite.classList.remove("hidden");
+    if (panelUpi) panelUpi.classList.add("hidden");
+    if (btnWebsite) {
+      btnWebsite.classList.add("active");
+      btnWebsite.style.color = "#0284c7";
+      btnWebsite.style.borderBottomColor = "#0284c7";
+    }
+    if (btnUpi) {
+      btnUpi.classList.remove("active");
+      btnUpi.style.color = "#64748b";
+      btnUpi.style.borderBottomColor = "transparent";
+    }
+  }
+};
+
+window.copyWebsiteQrUrl = function() {
+  const url = currentWebsiteQrUrl || getLiveWebsiteUrl();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("📋 Website link copied to clipboard!", 3000);
+      }
+    }).catch(() => {
+      prompt("Copy website link:", url);
+    });
+  } else {
+    prompt("Copy website link:", url);
+  }
+};
+
+window.shareWebsiteQrWhatsApp = function() {
+  const url = currentWebsiteQrUrl || getLiveWebsiteUrl();
+  const text = `🌊 *Aaryan Aqua Needs - GST Billing & Inventory System*\n\nOpen on your phone or computer to create GST bills, track stock, and generate reports:\n🔗 ${url}`;
+  const waUrl = "https://api.whatsapp.com/send?text=" + encodeURIComponent(text);
+  window.open(waUrl, "_blank");
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("📲 WhatsApp share window opened!", 3000);
+  }
+};
+
+window.downloadWebsiteQrCode = function() {
+  const canvas = document.getElementById("website-qr-canvas");
+  if (!canvas) return;
+  try {
+    const dataUrl = canvas.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = "aaryan_aqua_website_qr.png";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("📥 Website QR Code image downloaded!", 3000);
+    }
+  } catch (e) {
+    console.error("Failed to download QR code:", e);
+  }
+};
+
+window.printWebsiteQrStand = function() {
+  const canvas = document.getElementById("website-qr-canvas");
+  if (!canvas) return;
+  const qrDataUrl = canvas.toDataURL("image/png");
+  const websiteUrl = currentWebsiteQrUrl || getLiveWebsiteUrl();
+
+  const printWindow = window.open("", "_blank", "width=700,height=800");
+  if (!printWindow) {
+    alert("Please allow popups to print the counter stand.");
+    return;
+  }
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Aaryan Aqua Needs - Website QR Stand</title>
+      <style>
+        @page { size: A4 portrait; margin: 15mm; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+          margin: 0;
+          padding: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 90vh;
+          background: #ffffff;
+          color: #0f172a;
+          box-sizing: border-box;
+        }
+        .stand-card {
+          width: 100%;
+          max-width: 440px;
+          border: 4px solid #0284c7;
+          border-radius: 24px;
+          padding: 36px 28px;
+          text-align: center;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.06);
+        }
+        .logo-box {
+          margin-bottom: 12px;
+        }
+        .logo-box img {
+          height: 60px;
+          object-fit: contain;
+        }
+        h1 {
+          font-size: 22px;
+          margin: 0 0 4px 0;
+          font-weight: 800;
+          color: #0f172a;
+          letter-spacing: 0.03em;
+        }
+        p.tagline {
+          font-size: 11px;
+          font-weight: 700;
+          color: #0284c7;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          margin: 0 0 20px 0;
+        }
+        .qr-wrapper {
+          display: inline-block;
+          background: #ffffff;
+          border: 2px solid #e2e8f0;
+          border-radius: 16px;
+          padding: 16px;
+          margin-bottom: 18px;
+        }
+        .qr-wrapper img {
+          display: block;
+          width: 240px;
+          height: 240px;
+        }
+        .instruction {
+          font-size: 16px;
+          font-weight: 800;
+          color: #0f172a;
+          margin: 0 0 6px 0;
+        }
+        .sub-instruction {
+          font-size: 12px;
+          color: #64748b;
+          margin: 0 0 18px 0;
+        }
+        .url-badge {
+          display: inline-block;
+          background: #f1f5f9;
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          padding: 6px 14px;
+          font-family: monospace;
+          font-size: 12.5px;
+          font-weight: 700;
+          color: #0369a1;
+        }
+        .footer-note {
+          margin-top: 24px;
+          font-size: 10px;
+          color: #94a3b8;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="stand-card">
+        <div class="logo-box">
+          <img src="rallis_logo.png" alt="Rallis Logo">
+        </div>
+        <h1>AARYAN AQUA NEEDS</h1>
+        <p class="tagline">Quality Products for Better Aquaculture</p>
+        <div class="instruction">📱 Scan with any Smartphone Camera</div>
+        <div class="sub-instruction">Instant access to GST Billing, Pricing &amp; Stock System</div>
+        <div class="qr-wrapper">
+          <img src="${qrDataUrl}" alt="Website QR Code">
+        </div>
+        <div>
+          <span class="url-badge">${websiteUrl}</span>
+        </div>
+        <div class="footer-note">Official Cloud Billing System • Netlify PWA App</div>
+      </div>
+      <script>
+        window.onload = function() {
+          window.print();
+        };
+      <\/script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+};
+
+window.copyShopUpiId = function() {
+  const upiId = "7386262139@upi";
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(upiId).then(() => {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("📋 UPI ID (7386262139@upi) copied to clipboard!", 3000);
+      }
+    }).catch(() => {
+      prompt("Copy UPI ID:", upiId);
+    });
+  } else {
+    prompt("Copy UPI ID:", upiId);
+  }
+};
+
+window.shareShopUpiWhatsApp = function() {
+  const upiId = "7386262139@upi";
+  const text = `💳 *Aaryan Aqua Needs - Bank & UPI Payment Details*\n\n` +
+               `🔹 *UPI ID:* ${upiId}\n` +
+               `🔹 *Pay via:* Google Pay, PhonePe, Paytm, or BHIM\n` +
+               `🔹 *Account Name:* Aaryan Aqua Needs\n\n` +
+               `Please share the payment screenshot or UTR number after transfer. Thank you!`;
+  const waUrl = "https://api.whatsapp.com/send?text=" + encodeURIComponent(text);
+  window.open(waUrl, "_blank");
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("📲 WhatsApp payment message opened!", 3000);
+  }
+};
+
+window.downloadShopUpiQrCode = function() {
+  const canvas = document.getElementById("shop-upi-qr-canvas");
+  if (!canvas) return;
+  try {
+    const dataUrl = canvas.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = "aaryan_aqua_upi_payment_qr.png";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("📥 Shop UPI Payment QR image downloaded!", 3000);
+    }
+  } catch (e) {
+    console.error("Failed to download UPI QR code:", e);
+  }
+};
+
+window.printShopUpiStand = function() {
+  const canvas = document.getElementById("shop-upi-qr-canvas");
+  if (!canvas) return;
+  const qrDataUrl = canvas.toDataURL("image/png");
+
+  const printWindow = window.open("", "_blank", "width=700,height=800");
+  if (!printWindow) {
+    alert("Please allow popups to print the counter stand.");
+    return;
+  }
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Aaryan Aqua Needs - UPI Payment Stand</title>
+      <style>
+        @page { size: A4 portrait; margin: 15mm; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+          margin: 0;
+          padding: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 90vh;
+          background: #ffffff;
+          color: #0f172a;
+          box-sizing: border-box;
+        }
+        .stand-card {
+          width: 100%;
+          max-width: 440px;
+          border: 4px solid #059669;
+          border-radius: 24px;
+          padding: 36px 28px;
+          text-align: center;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.06);
+        }
+        .logo-box {
+          margin-bottom: 12px;
+        }
+        .logo-box img {
+          height: 60px;
+          object-fit: contain;
+        }
+        h1 {
+          font-size: 22px;
+          margin: 0 0 4px 0;
+          font-weight: 800;
+          color: #0f172a;
+          letter-spacing: 0.03em;
+        }
+        p.tagline {
+          font-size: 11px;
+          font-weight: 700;
+          color: #059669;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          margin: 0 0 20px 0;
+        }
+        .qr-wrapper {
+          display: inline-block;
+          background: #ffffff;
+          border: 2px solid #e2e8f0;
+          border-radius: 16px;
+          padding: 16px;
+          margin-bottom: 18px;
+        }
+        .qr-wrapper img {
+          display: block;
+          width: 240px;
+          height: 240px;
+        }
+        .instruction {
+          font-size: 16px;
+          font-weight: 800;
+          color: #0f172a;
+          margin: 0 0 6px 0;
+        }
+        .sub-instruction {
+          font-size: 12px;
+          color: #64748b;
+          margin: 0 0 18px 0;
+        }
+        .url-badge {
+          display: inline-block;
+          background: #ecfdf5;
+          border: 1px solid #a7f3d0;
+          border-radius: 8px;
+          padding: 6px 14px;
+          font-family: monospace;
+          font-size: 13.5px;
+          font-weight: 800;
+          color: #065f46;
+        }
+        .footer-note {
+          margin-top: 24px;
+          font-size: 11px;
+          color: #64748b;
+          font-weight: 600;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="stand-card">
+        <div class="logo-box">
+          <img src="rallis_logo.png" alt="Rallis Logo">
+        </div>
+        <h1>AARYAN AQUA NEEDS</h1>
+        <p class="tagline">Quality Products for Better Aquaculture</p>
+        <div class="instruction">💳 Scan &amp; Pay with Any UPI App</div>
+        <div class="sub-instruction">Google Pay • PhonePe • Paytm • BHIM • Any Bank App</div>
+        <div class="qr-wrapper">
+          <img src="${qrDataUrl}" alt="UPI Payment QR Code">
+        </div>
+        <div>
+          <span class="url-badge">UPI ID: 7386262139@upi</span>
+        </div>
+        <div class="footer-note">Accepted Here • 0% Extra Charges • Instant Settlement</div>
+      </div>
+      <script>
+        window.onload = function() {
+          window.print();
+        };
+      <\/script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+};
+
