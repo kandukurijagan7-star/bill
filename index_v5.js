@@ -12443,3 +12443,25 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 window.checkUrlVerificationParams();
 
+// Smooth Scroll to Top Helper & Floating Button Controller
+window.scrollToCurrentViewTop = function() {
+  const activeView = document.querySelector(".content-view:not(.hidden)");
+  if (activeView) {
+    activeView.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+document.addEventListener("scroll", function(e) {
+  if (e.target && e.target.classList && e.target.classList.contains("content-view")) {
+    const btn = document.getElementById("scroll-to-top-btn");
+    if (btn) {
+      if (e.target.scrollTop > 150) {
+        btn.classList.remove("hidden");
+      } else {
+        btn.classList.add("hidden");
+      }
+    }
+  }
+}, true);
+
