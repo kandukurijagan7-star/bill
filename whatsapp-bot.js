@@ -110,20 +110,65 @@ function broadcastStatus() {
   }
 }
 
+function killLingeringChromeProcesses() {
+  if (process.platform === 'win32') {
+    try {
+      const { execSync } = require('child_process');
+      const psScript = `Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and ($_.CommandLine -like '*wwebjs*' -or $_.CommandLine -like '*test_auth*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+      execSync(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript}"`, { stdio: 'ignore', timeout: 4000 });
+    } catch (e) {}
+  }
+}
+
+function cleanChromiumLocks(dir) {
+  try {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        cleanChromiumLocks(fullPath);
+      } else if (entry.name.startsWith('Singleton') || entry.name === 'SingletonLock' || entry.name === 'SingletonCookie' || entry.name === 'SingletonSocket') {
+        try { fs.unlinkSync(fullPath); } catch (e) {}
+      }
+    }
+  } catch (e) {}
+}
+
 async function handleDisconnect() {
   console.log('🚪 Disconnecting & unlinking WhatsApp device...');
   try {
     if (client) {
       try { await client.logout(); } catch (e) {}
+      try {
+        if (client.pupBrowser) {
+          const proc = client.pupBrowser.process();
+          if (proc?.pid) {
+            try { process.kill(proc.pid, 'SIGKILL'); } catch (e) {}
+          }
+          await client.pupBrowser.close();
+        }
+      } catch (e) {}
       try { await client.destroy(); } catch (e) {}
       client = null;
     }
   } catch (e) {}
+
+  killLingeringChromeProcesses();
+  await new Promise(r => setTimeout(r, 400));
+  cleanChromiumLocks(authPath);
+
   try {
     if (fs.existsSync(authPath)) {
       fs.rmSync(authPath, { recursive: true, force: true });
+      console.log('🧹 Cleaned session auth folder on disconnect.');
     }
   } catch (e) {}
+  try {
+    const qrFile = path.join(__dirname, 'whatsapp_qr.png');
+    if (fs.existsSync(qrFile)) fs.unlinkSync(qrFile);
+  } catch (e) {}
+
   status = 'DISCONNECTED';
   clientInfo = null;
   qrCodeDataUrl = null;
@@ -172,7 +217,16 @@ function initMqttBridge() {
           console.log('📨 Received WhatsApp Cloud Command from Netlify:', cmd.command || cmd.action);
 
           if (cmd.command === 'refresh_qr' || cmd.action === 'refresh_qr') {
-            initClient({ forceClean: true });
+            if (status === 'QR_READY' && client && client.pupPage && !client.pupPage.isClosed()) {
+              console.log('🔄 Reloading WhatsApp Web page for fresh QR code...');
+              try {
+                await client.pupPage.reload({ waitUntil: 'networkidle0' }).catch(() => {});
+                return;
+              } catch (e) {
+                console.warn('Page reload failed, fallback to full re-init:', e.message);
+              }
+            }
+            initClient({ forceClean: false });
           } else if (cmd.command === 'pair_code' || cmd.action === 'pair_code') {
             if (cmd.phone) {
               console.log('🔑 Remote pairing code requested for:', cmd.phone);
@@ -292,37 +346,37 @@ async function initClient(options = {}) {
   broadcastStatus();
 
   try {
-    if (forceClean) {
+    if (client) {
       try {
-        if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true });
-        console.log('🧹 Cleaned session auth folder.');
-        try {
-          if (fs.existsSync(path.join(__dirname, 'whatsapp_qr.png'))) {
-            fs.unlinkSync(path.join(__dirname, 'whatsapp_qr.png'));
+        if (client.pupBrowser) {
+          const proc = client.pupBrowser.process();
+          if (proc?.pid) {
+            try { process.kill(proc.pid, 'SIGKILL'); } catch (e) {}
           }
-        } catch (e) {}
-      } catch (e) {}
-    }
-
-    function cleanChromiumLocks(dir) {
-      try {
-        if (!fs.existsSync(dir)) return;
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            cleanChromiumLocks(fullPath);
-          } else if (entry.name.startsWith('Singleton')) {
-            try { fs.unlinkSync(fullPath); } catch (e) {}
-          }
+          await client.pupBrowser.close();
         }
       } catch (e) {}
-    }
-    cleanChromiumLocks(authPath);
-
-    if (client) {
       try { await client.destroy(); } catch (e) {}
       client = null;
+    }
+
+    killLingeringChromeProcesses();
+    await new Promise(r => setTimeout(r, 400));
+    cleanChromiumLocks(authPath);
+
+    if (forceClean) {
+      try {
+        if (fs.existsSync(authPath)) {
+          fs.rmSync(authPath, { recursive: true, force: true });
+          console.log('🧹 Cleaned session auth folder.');
+        }
+      } catch (e) {
+        console.warn('Could not remove authPath:', e.message);
+      }
+      try {
+        const qrFile = path.join(__dirname, 'whatsapp_qr.png');
+        if (fs.existsSync(qrFile)) fs.unlinkSync(qrFile);
+      } catch (e) {}
     }
 
     const chromePath = findChromeExecutable();
@@ -330,9 +384,11 @@ async function initClient(options = {}) {
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-gpu',
+      '--disable-accelerated-2d-canvas',
       '--no-first-run',
-      '--no-zygote'
+      '--no-zygote',
+      '--disable-gpu',
+      '--disable-blink-features=AutomationControlled'
     ];
 
     const puppeteerConfig = {
@@ -345,6 +401,7 @@ async function initClient(options = {}) {
 
     const clientConfig = {
       authStrategy: new LocalAuth({ dataPath: authPath }),
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       webVersionCache: {
         type: 'none'
       },
@@ -477,8 +534,14 @@ app.post('/api/whatsapp/connect', async (req, res) => {
 });
 
 app.post('/api/whatsapp/refresh-qr', async (req, res) => {
-  console.log('🔄 Forced Refreshing WhatsApp QR Code...');
-  initClient({ forceClean: true });
+  console.log('🔄 Refreshing WhatsApp QR Code...');
+  if (status === 'QR_READY' && client && client.pupPage && !client.pupPage.isClosed()) {
+    try {
+      await client.pupPage.reload({ waitUntil: 'networkidle0' }).catch(() => {});
+      return res.json({ ok: true, message: 'QR reloaded', ...getStatus() });
+    } catch (e) {}
+  }
+  initClient({ forceClean: false });
   res.json({ ok: true, message: 'Refreshing QR code', ...getStatus() });
 });
 
