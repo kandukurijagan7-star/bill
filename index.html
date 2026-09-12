@@ -43,7 +43,7 @@
       });
     }
     // Build Version Enforcement: Clears stale caches when new build is deployed
-    window.__APP_BUILD_VERSION__ = "v317_advanced_suite";
+    window.__APP_BUILD_VERSION__ = "v318_live_wa_qr";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -57,8 +57,8 @@
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.google.com">
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=317_advanced_suite">
-  <script src="invoice_utils_v5.js?v=317_advanced_suite"></script>
+  <link rel="stylesheet" href="index.css?v=318_live_wa_qr">
+  <script src="invoice_utils_v5.js?v=318_live_wa_qr"></script>
 </head>
 <body>
 
@@ -2897,15 +2897,31 @@
                 </ol>
               </div>
 
+              <!-- LIVE QR STATUS / COUNTDOWN BADGE -->
+              <div id="wa-qr-timer-badge" style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 11.5px; font-weight: 700; background: #ecfdf5; color: #047857; margin-bottom: 10px; border: 1px solid #a7f3d0;">
+                <span id="wa-qr-pulse-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block;"></span>
+                <span id="wa-qr-timer-label">🟢 LIVE QR • Ready to Scan</span>
+              </div>
+
               <!-- LOADING INDICATOR -->
               <div id="wa-qr-loading" style="display: none; color: #64748b; padding: 15px 0;">
                 <i class="fa-solid fa-spinner fa-spin fa-2x" style="margin-bottom: 8px; color: #0891b2;"></i>
-                <p style="margin: 0; font-size: 13px; font-weight: 500;">Refreshing WhatsApp QR Code...<br><span style="font-size: 11px; color: #94a3b8;">Connecting to WhatsApp Web</span></p>
+                <p style="margin: 0; font-size: 13px; font-weight: 500;">Generating Fresh Live QR Code...<br><span style="font-size: 11px; color: #94a3b8;">Connecting directly to WhatsApp Web</span></p>
               </div>
 
-              <!-- LIVE WHATSAPP LOGIN QR CODE (Always prominently rendered) -->
+              <!-- LIVE WHATSAPP LOGIN QR CODE (With Expired Overlay) -->
               <div style="position: relative; display: inline-block; background: #ffffff; padding: 12px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 14px rgba(0,0,0,0.08); margin-bottom: 12px;">
-                <img id="wa-qr-image" src="whatsapp_qr.png?v=316_wa_login_qr" alt="WhatsApp Login QR Code" style="display: block; width: 220px; height: 220px; object-fit: contain; border-radius: 6px;">
+                <img id="wa-qr-image" src="" alt="WhatsApp Login QR Code" style="display: none; width: 220px; height: 220px; object-fit: contain; border-radius: 6px;">
+                
+                <!-- EXPIRED OVERLAY -->
+                <div id="wa-qr-expired-overlay" style="display: none; position: absolute; inset: 0; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(2px); border-radius: 12px; flex-direction: column; align-items: center; justify-content: center; color: white; padding: 16px; z-index: 5;">
+                  <i class="fa-solid fa-clock-rotate-left fa-2x" style="color: #f59e0b; margin-bottom: 8px;"></i>
+                  <span style="font-weight: 800; font-size: 14px; color: #f8fafc;">QR Code Expired</span>
+                  <span style="font-size: 11.5px; color: #94a3b8; margin: 4px 0 12px 0;">WhatsApp QR codes expire in 25s</span>
+                  <button type="button" class="btn btn-sm btn-cyan" onclick="initiateWhatsAppConnect(true)" style="font-weight: 700; padding: 8px 16px; font-size: 12px; cursor: pointer; border-radius: 6px;">
+                    <i class="fa-solid fa-arrows-rotate"></i> Refresh New QR
+                  </button>
+                </div>
               </div>
 
               <!-- ACTION BUTTONS -->
@@ -2921,22 +2937,37 @@
               <div id="wa-qr-placeholder" style="display: none;"></div>
             </div>
 
-            <!-- PHONE PAIRING CODE ACCORDION -->
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+            <!-- RECOMMENDED ALTERNATIVE: LINK WITH PHONE NUMBER CODE -->
+            <div style="background: #ffffff; border: 1.5px solid #0891b2; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(8,145,178,0.12);">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <strong style="font-size: 11.5px; color: #334155;"><i class="fa-solid fa-key text-teal"></i> Alternative: Link with Phone Number Code</strong>
+                <strong style="font-size: 12px; color: #0a4b5c; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-key text-teal"></i> Easiest: Link by Phone Number Code
+                </strong>
+                <span style="font-size: 10px; background: #e0f2fe; color: #0284c7; padding: 2px 7px; border-radius: 12px; font-weight: 700;">No Camera Needed</span>
               </div>
+              <p style="margin: 0 0 10px 0; font-size: 11.5px; color: #475569; line-height: 1.4;">
+                On your phone's WhatsApp screen, tap <strong>"Link with phone number instead"</strong> at the bottom. Enter your mobile number below to get your 8-character code:
+              </p>
               <div style="display: flex; gap: 6px;">
-                <span style="background: #e2e8f0; border-radius: 4px; padding: 6px 8px; font-size: 12px; font-weight: 700; color: #475569;">+91</span>
-                <input type="tel" id="wa-pair-phone-input" placeholder="Enter 10 digits" maxlength="10" style="flex: 1; padding: 6px 8px; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 4px;">
-                <button type="button" class="btn btn-xs btn-primary" onclick="requestWhatsAppPairCode()" style="background: #0891b2; border: none; color: white; padding: 6px 10px; font-size: 11.5px; font-weight: 600;">
-                  Get 8-Digit Code
+                <span style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 700; color: #475569; display: flex; align-items: center;">+91</span>
+                <input type="tel" id="wa-pair-phone-input" placeholder="e.g. 8367047947" maxlength="10" style="flex: 1; padding: 7px 10px; font-size: 12.5px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;" onkeydown="if(event.key === 'Enter'){ requestWhatsAppPairCode(); }">
+                <button type="button" class="btn btn-sm btn-primary" onclick="requestWhatsAppPairCode()" style="background: #0891b2; border: none; color: white; padding: 7px 14px; font-size: 12px; font-weight: 700; border-radius: 6px; cursor: pointer; white-space: nowrap;">
+                  Get Code
                 </button>
               </div>
-              <div id="wa-code-display-box" style="display: none; text-align: center; margin-top: 10px; background: white; border: 1px dashed #0891b2; border-radius: 6px; padding: 8px;">
-                <span style="font-size: 10.5px; color: #64748b;">Type this code into WhatsApp on your phone:</span>
-                <div id="wa-code-text" style="font-size: 22px; font-family: monospace; font-weight: 800; color: #0a4b5c; letter-spacing: 3px; margin: 4px 0;">---- ----</div>
+              <div id="wa-code-display-box" style="display: none; text-align: center; margin-top: 12px; background: #ecfdf5; border: 1.5px dashed #10b981; border-radius: 8px; padding: 12px;">
+                <span style="font-size: 11px; color: #065f46; font-weight: 600;">Type this 8-digit code into WhatsApp on your phone:</span>
+                <div id="wa-code-text" style="font-size: 26px; font-family: monospace; font-weight: 900; color: #047857; letter-spacing: 4px; margin: 6px 0;">---- ----</div>
+                <span style="font-size: 10.5px; color: #64748b;">Phone links automatically in 2 seconds once entered!</span>
               </div>
+            </div>
+
+            <!-- ZERO-SETUP 1-CLICK DIRECT DISPATCH BANNER -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; text-align: left; font-size: 11.5px; color: #475569;">
+              <span style="font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
+                <i class="fa-solid fa-bolt text-warning"></i> Need to send bills or reminders right now?
+              </span>
+              You don't need to link a device! Invoices and payment reminders can be sent with 1-click WhatsApp Direct from any invoice in History or Billing.
             </div>
           </div>
 
@@ -3584,7 +3615,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=317_advanced_suite"></script>
+  <script src="index_v5.js?v=318_live_wa_qr"></script>
 </body>
 </html>
 

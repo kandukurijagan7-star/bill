@@ -6556,6 +6556,44 @@ function updateWhatsAppBotPillUI(data) {
   pill.title = "WhatsApp Bot & Direct Dispatch";
 }
 
+let whatsappQrCountdownTimer = null;
+let whatsappQrSecondsLeft = 25;
+
+function startWhatsAppQrCountdown(initialSeconds = 25) {
+  if (whatsappQrCountdownTimer) clearInterval(whatsappQrCountdownTimer);
+  whatsappQrSecondsLeft = initialSeconds > 0 ? initialSeconds : 25;
+
+  const timerBadge = document.getElementById("wa-qr-timer-badge");
+  const timerLabel = document.getElementById("wa-qr-timer-label");
+  const expiredOverlay = document.getElementById("wa-qr-expired-overlay");
+
+  if (timerBadge) {
+    timerBadge.style.display = "inline-flex";
+    timerBadge.style.background = "#ecfdf5";
+    timerBadge.style.color = "#047857";
+    timerBadge.style.borderColor = "#a7f3d0";
+  }
+  if (expiredOverlay) expiredOverlay.style.display = "none";
+  if (timerLabel) timerLabel.textContent = `🟢 LIVE QR • Expires in ${whatsappQrSecondsLeft}s`;
+
+  whatsappQrCountdownTimer = setInterval(() => {
+    whatsappQrSecondsLeft--;
+    if (whatsappQrSecondsLeft > 0) {
+      if (timerLabel) timerLabel.textContent = `🟢 LIVE QR • Expires in ${whatsappQrSecondsLeft}s`;
+    } else {
+      clearInterval(whatsappQrCountdownTimer);
+      whatsappQrCountdownTimer = null;
+      if (timerLabel) timerLabel.textContent = `🔴 QR EXPIRED • Tap to refresh`;
+      if (timerBadge) {
+        timerBadge.style.background = "#fff1f2";
+        timerBadge.style.color = "#be123c";
+        timerBadge.style.borderColor = "#fecdd3";
+      }
+      if (expiredOverlay) expiredOverlay.style.display = "flex";
+    }
+  }, 1000);
+}
+
 function updateWhatsAppBotModalUI(data) {
   const modal = document.getElementById("whatsapp-bot-modal");
   if (!modal) return;
@@ -6566,6 +6604,9 @@ function updateWhatsAppBotModalUI(data) {
   const qrPlaceholder = document.getElementById("wa-qr-placeholder");
   const qrLoading = document.getElementById("wa-qr-loading");
   const qrImage = document.getElementById("wa-qr-image");
+  const expiredOverlay = document.getElementById("wa-qr-expired-overlay");
+  const timerBadge = document.getElementById("wa-qr-timer-badge");
+  const timerLabel = document.getElementById("wa-qr-timer-label");
   const connectedSection = document.getElementById("wa-connected-section");
   const localContainer = document.getElementById("wa-bot-local-container");
   const cloudBanner = document.getElementById("wa-cloud-env-banner");
@@ -6576,7 +6617,12 @@ function updateWhatsAppBotModalUI(data) {
     cloudBanner.style.display = "none";
   }
 
+  // 1. CONNECTED STATE
   if (data && data.status === "CONNECTED") {
+    if (whatsappQrCountdownTimer) {
+      clearInterval(whatsappQrCountdownTimer);
+      whatsappQrCountdownTimer = null;
+    }
     if (statusCard) {
       statusCard.style.background = "#ecfdf5";
       statusCard.style.borderColor = "#a7f3d0";
@@ -6593,7 +6639,13 @@ function updateWhatsAppBotModalUI(data) {
     if (connectedSection) connectedSection.style.display = "block";
     if (deviceName) deviceName.textContent = data.clientInfo?.pushname || "Linked WhatsApp Account";
     if (devicePhone) devicePhone.textContent = data.clientInfo?.phone ? `+${data.clientInfo.phone} (Active)` : "Connected";
-  } else if (data && data.status === "CODE_READY" && data.pairingCode) {
+  } 
+  // 2. PAIRING CODE READY STATE (8-digit code)
+  else if (data && data.status === "CODE_READY" && data.pairingCode) {
+    if (whatsappQrCountdownTimer) {
+      clearInterval(whatsappQrCountdownTimer);
+      whatsappQrCountdownTimer = null;
+    }
     if (statusCard) {
       statusCard.style.background = "#fffbeb";
       statusCard.style.borderColor = "#fef3c7";
@@ -6612,11 +6664,13 @@ function updateWhatsAppBotModalUI(data) {
     const codeText = document.getElementById("wa-code-text");
     if (codeBox) codeBox.style.display = "block";
     if (codeText) {
-      const c = data.pairingCode;
+      const c = String(data.pairingCode).toUpperCase();
       codeText.textContent = c.length === 8 ? `${c.slice(0, 4)} - ${c.slice(4)}` : c;
     }
     switchWhatsAppPairTab('bot');
-  } else if (data && data.status === "QR_READY" && data.qrCodeDataUrl) {
+  } 
+  // 3. LIVE QR READY STATE
+  else if (data && data.status === "QR_READY" && data.qrCodeDataUrl) {
     if (statusCard) {
       statusCard.style.background = "#eff6ff";
       statusCard.style.borderColor = "#bfdbfe";
@@ -6626,7 +6680,7 @@ function updateWhatsAppBotModalUI(data) {
       statusTitle.style.color = "#1d4ed8";
     }
     if (statusDesc) {
-      statusDesc.textContent = "Open WhatsApp on phone > Linked Devices > Link a Device > scan the QR code below.";
+      statusDesc.textContent = "Open WhatsApp on phone > Linked Devices > Link a Device > scan the live QR below.";
       statusDesc.style.color = "#1e40af";
     }
     if (connectedSection) connectedSection.style.display = "none";
@@ -6637,32 +6691,59 @@ function updateWhatsAppBotModalUI(data) {
       qrImage.src = data.qrCodeDataUrl;
       qrImage.style.display = "block";
     }
+    if (expiredOverlay) expiredOverlay.style.display = "none";
+    startWhatsAppQrCountdown(data.qrExpiresInSec || 25);
     switchWhatsAppPairTab('bot');
-  } else if (data && (data.status === "INITIALIZING" || data.status === "AUTHENTICATING")) {
+  } 
+  // 4. QR EXPIRED STATE
+  else if (data && (data.status === "QR_EXPIRED" || data.isQrExpired)) {
+    if (statusCard) {
+      statusCard.style.background = "#fff1f2";
+      statusCard.style.borderColor = "#fecdd3";
+    }
+    if (statusTitle) {
+      statusTitle.textContent = "WhatsApp QR Code Expired";
+      statusTitle.style.color = "#be123c";
+    }
+    if (statusDesc) {
+      statusDesc.textContent = "WhatsApp QR codes expire in 25s for security. Click 'Refresh QR Code' or use Phone Number.";
+      statusDesc.style.color = "#9f1239";
+    }
+    if (expiredOverlay) expiredOverlay.style.display = "flex";
+    if (timerBadge) {
+      timerBadge.style.background = "#fff1f2";
+      timerBadge.style.color = "#be123c";
+      timerBadge.style.borderColor = "#fecdd3";
+    }
+    if (timerLabel) timerLabel.textContent = "🔴 QR EXPIRED • Tap to refresh";
+  } 
+  // 5. INITIALIZING / CONNECTING
+  else if (data && (data.status === "INITIALIZING" || data.status === "AUTHENTICATING")) {
+    if (whatsappQrCountdownTimer) {
+      clearInterval(whatsappQrCountdownTimer);
+      whatsappQrCountdownTimer = null;
+    }
     if (statusCard) {
       statusCard.style.background = "#f0fdf4";
       statusCard.style.borderColor = "#bbf7d0";
     }
     if (statusTitle) {
-      statusTitle.textContent = data.status === "AUTHENTICATING" ? "Authenticating WhatsApp Session..." : "Connecting to WhatsApp Web Engine...";
+      statusTitle.textContent = data.status === "AUTHENTICATING" ? "Authenticating WhatsApp Session..." : "Connecting directly to WhatsApp Web...";
       statusTitle.style.color = "#166534";
     }
     if (statusDesc) {
-      statusDesc.textContent = "Waiting for companion response. If pairing, scan the QR code below.";
+      statusDesc.textContent = "Launching authentic WhatsApp Web engine. Fresh QR will appear in 5-10 seconds.";
       statusDesc.style.color = "#475569";
     }
     if (connectedSection) connectedSection.style.display = "none";
     if (localContainer) localContainer.style.display = "block";
-    if (qrPlaceholder) qrPlaceholder.style.display = "none";
-    if (qrLoading) qrLoading.style.display = "none";
-    if (qrImage) {
-      if (!qrImage.src || qrImage.style.display === "none") {
-        qrImage.src = 'whatsapp_qr.png?v=' + (window.__APP_BUILD_VERSION__ || Date.now());
-      }
-      qrImage.style.display = "block";
-    }
-  } else {
-    // Default / Offline / Netlify cloud: Always display the WhatsApp Login QR Code
+    if (qrLoading) qrLoading.style.display = "block";
+    if (qrImage) qrImage.style.display = "none";
+    if (expiredOverlay) expiredOverlay.style.display = "none";
+    if (timerLabel) timerLabel.textContent = "🔄 Initializing WhatsApp Engine...";
+  } 
+  // 6. DEFAULT / OFFLINE / CLOUD
+  else {
     if (statusCard) {
       statusCard.style.background = "#eff6ff";
       statusCard.style.borderColor = "#bfdbfe";
@@ -6672,17 +6753,15 @@ function updateWhatsAppBotModalUI(data) {
       statusTitle.style.color = "#1d4ed8";
     }
     if (statusDesc) {
-      statusDesc.textContent = "Open WhatsApp on phone > Linked Devices > Link a Device > scan the QR code below.";
+      statusDesc.textContent = "Open WhatsApp on phone > Linked Devices > Link a Device > scan the live QR below.";
       statusDesc.style.color = "#1e40af";
     }
     if (connectedSection) connectedSection.style.display = "none";
     if (localContainer) localContainer.style.display = "block";
     if (qrLoading) qrLoading.style.display = "none";
     if (qrPlaceholder) qrPlaceholder.style.display = "none";
-    if (qrImage) {
-      if (!qrImage.src || qrImage.style.display === "none") {
-        qrImage.src = 'whatsapp_qr.png?v=' + (window.__APP_BUILD_VERSION__ || Date.now());
-      }
+    if (qrImage && !qrImage.src) {
+      qrImage.src = 'whatsapp_qr.png?v=' + (window.__APP_BUILD_VERSION__ || Date.now());
       qrImage.style.display = "block";
     }
   }
@@ -6838,12 +6917,12 @@ window.requestWhatsAppPairCode = async function() {
   const phone = phoneInput ? phoneInput.value.trim().replace(/\D/g, '') : "";
 
   if (!phone || phone.length < 10) {
-    showFloatingToast("⚠️ Please enter a valid 10-digit mobile number.", "warning");
+    showFloatingToast("⚠️ Please enter a valid 10-digit mobile number.", 3500);
     return;
   }
 
   if (codeBox) codeBox.style.display = "block";
-  if (codeText) codeText.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size: 20px;"></i> Generating Code...';
+  if (codeText) codeText.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size: 18px;"></i> Requesting 8-digit code...';
 
   try {
     const res = await fetch(getWhatsAppApiEndpoint('/api/whatsapp/pair-code'), {
@@ -6852,16 +6931,32 @@ window.requestWhatsAppPairCode = async function() {
       body: JSON.stringify({ phone })
     });
     const data = await res.json();
-    if (data && data.ok && data.code) {
-      const c = data.code;
-      if (codeText) codeText.textContent = c.length === 8 ? `${c.slice(0, 4)} - ${c.slice(4)}` : c;
+    if (data && data.ok) {
+      showFloatingToast("⏳ Contacting WhatsApp server... Generating code.", 4000);
+      let attempts = 0;
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        await fetchWhatsAppBotStatus();
+        if (whatsappBotStatus && whatsappBotStatus.pairingCode) {
+          clearInterval(pollInterval);
+          if (codeText) {
+            const c = String(whatsappBotStatus.pairingCode).toUpperCase();
+            codeText.textContent = c.length === 8 ? `${c.slice(0, 4)} - ${c.slice(4)}` : c;
+          }
+        } else if (attempts > 18) {
+          clearInterval(pollInterval);
+          if (codeText && codeText.textContent.includes("Requesting")) {
+            codeText.textContent = "Please try again or use QR";
+          }
+        }
+      }, 1000);
     } else {
       if (codeText) codeText.textContent = "Try again";
-      showFloatingToast(data.error || "⚠️ Failed to generate pairing code. Please try QR scan.", "warning");
+      showFloatingToast(data.error || "⚠️ Failed to request pairing code. Please try QR scan.", 4000);
     }
   } catch (err) {
-    if (codeText) codeText.textContent = "Error";
-    showFloatingToast("⚠️ Connection error: " + err.message, "warning");
+    if (codeText) codeText.textContent = "Bot Offline";
+    showFloatingToast("⚠️ Companion bot is not running on localhost. Launch Start_WhatsApp_Bot.bat first.", 4000);
   }
 };
 
@@ -7067,19 +7162,22 @@ function _openWhatsAppBotModalActual() {
   const fallbackToggle = document.getElementById("wa-fallback-1click-toggle");
   if (fallbackToggle) fallbackToggle.checked = settings.whatsappFallback1Click !== false;
 
-  // Immediately ensure WhatsApp login QR is visible
+  // Show live QR or loading spinner
+  const qrLoading = document.getElementById("wa-qr-loading");
   const qrImage = document.getElementById("wa-qr-image");
-  if (qrImage) {
-    if (!qrImage.src || qrImage.style.display === "none") {
-      qrImage.src = 'whatsapp_qr.png?v=' + (window.__APP_BUILD_VERSION__ || Date.now());
-    }
-    qrImage.style.display = "block";
+  const expiredOverlay = document.getElementById("wa-qr-expired-overlay");
+  
+  if (expiredOverlay) expiredOverlay.style.display = "none";
+  if (whatsappBotStatus && whatsappBotStatus.status === "QR_READY" && whatsappBotStatus.qrCodeDataUrl) {
+    updateWhatsAppBotModalUI(whatsappBotStatus);
+  } else {
+    if (qrLoading) qrLoading.style.display = "block";
+    if (qrImage) qrImage.style.display = "none";
   }
 
   fetchWhatsAppBotStatus();
   if (whatsappPollInterval) clearInterval(whatsappPollInterval);
   whatsappPollInterval = setInterval(fetchWhatsAppBotStatus, 2000);
-  initiateWhatsAppConnect();
   switchWhatsAppPairTab('bot');
 }
 
@@ -7097,6 +7195,10 @@ window.closeWhatsAppBotModal = function(e) {
     clearInterval(whatsappPollInterval);
     whatsappPollInterval = null;
   }
+  if (whatsappQrCountdownTimer) {
+    clearInterval(whatsappQrCountdownTimer);
+    whatsappQrCountdownTimer = null;
+  }
 
   const sec = globalSettings?.security || {};
   if (sec.whatsappAutoLockMinutes === "immediate") {
@@ -7108,13 +7210,24 @@ window.closeWhatsAppBotModal = function(e) {
 window.initiateWhatsAppConnect = async function(forceClean = false) {
   const qrLoading = document.getElementById("wa-qr-loading");
   const qrImage = document.getElementById("wa-qr-image");
+  const expiredOverlay = document.getElementById("wa-qr-expired-overlay");
+  const timerBadge = document.getElementById("wa-qr-timer-badge");
+  const timerLabel = document.getElementById("wa-qr-timer-label");
 
-  if (forceClean && qrLoading) qrLoading.style.display = "block";
+  if (qrLoading) qrLoading.style.display = "block";
+  if (qrImage) qrImage.style.display = "none";
+  if (expiredOverlay) expiredOverlay.style.display = "none";
+  if (timerBadge) {
+    timerBadge.style.background = "#f0fdf4";
+    timerBadge.style.borderColor = "#bbf7d0";
+  }
+  if (timerLabel) timerLabel.textContent = "🔄 Contacting WhatsApp Web...";
 
   try {
+    const endpoint = forceClean ? '/api/whatsapp/refresh-qr' : '/api/whatsapp/connect';
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(getWhatsAppApiEndpoint('/api/whatsapp/connect'), {
+    const res = await fetch(getWhatsAppApiEndpoint(endpoint), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ forceClean }),
@@ -7130,12 +7243,7 @@ window.initiateWhatsAppConnect = async function(forceClean = false) {
   } catch (e) {
     console.warn("Connect notice:", e.message);
     if (qrLoading) qrLoading.style.display = "none";
-    if (qrImage) {
-      if (!qrImage.src || qrImage.style.display === "none") {
-        qrImage.src = 'whatsapp_qr.png?v=' + (window.__APP_BUILD_VERSION__ || Date.now());
-      }
-      qrImage.style.display = "block";
-    }
+    if (timerLabel) timerLabel.textContent = "⚠️ Bot Offline • Use 1-Click WhatsApp Direct";
   }
 };
 

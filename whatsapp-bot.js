@@ -29,6 +29,7 @@ let pairingCode = null;
 let clientInfo = null;
 let errorMessage = null;
 let isInitializing = false;
+let qrTimestamp = null;
 let activityLogs = [];
 
 const authPath = path.join(__dirname, 'data', '.wwebjs_auth');
@@ -92,13 +93,21 @@ function logActivity(entry) {
 }
 
 function getStatus() {
+  const qrAgeMs = qrTimestamp ? (Date.now() - qrTimestamp) : null;
+  const qrExpiresInSec = qrTimestamp ? Math.max(0, Math.round((28000 - qrAgeMs) / 1000)) : 0;
+  const isQrExpired = qrTimestamp ? (qrAgeMs > 30000) : false;
+
   return {
-    status,
+    status: (isQrExpired && status === 'QR_READY') ? 'QR_EXPIRED' : status,
     isReady: status === 'CONNECTED',
-    qrCodeDataUrl,
+    qrCodeDataUrl: isQrExpired ? null : qrCodeDataUrl,
+    rawQr: isQrExpired ? null : rawQr,
     pairingCode,
     clientInfo,
-    errorMessage
+    errorMessage,
+    qrTimestamp,
+    qrExpiresInSec,
+    isQrExpired
   };
 }
 
@@ -112,9 +121,9 @@ function formatPhone(phone) {
 
 function findChromeExecutable() {
   const candidates = [
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    path.join(process.env.USERPROFILE || 'C:\\Users\\ADMIN', '.cache', 'puppeteer', 'chrome', 'win64-146.0.7680.31', 'chrome-win64', 'chrome.exe'),
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    path.join(process.env.USERPROFILE || 'C:\\Users\\ADMIN', '.cache', 'puppeteer', 'chrome', 'win64-146.0.7680.31', 'chrome-win64', 'chrome.exe'),
+    process.env.PUPPETEER_EXECUTABLE_PATH,
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
   ];
@@ -142,6 +151,11 @@ async function initClient(options = {}) {
       try {
         if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true });
         console.log('🧹 Cleaned session auth folder.');
+        try {
+          if (fs.existsSync(path.join(__dirname, 'whatsapp_qr.png'))) {
+            fs.unlinkSync(path.join(__dirname, 'whatsapp_qr.png'));
+          }
+        } catch (e) {}
       } catch (e) {}
     }
 
@@ -187,8 +201,7 @@ async function initClient(options = {}) {
     const clientConfig = {
       authStrategy: new LocalAuth({ dataPath: authPath }),
       webVersionCache: {
-        type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
+        type: 'none'
       },
       puppeteer: puppeteerConfig
     };
@@ -207,6 +220,7 @@ async function initClient(options = {}) {
       status = 'QR_READY';
       pairingCode = null;
       isInitializing = false;
+      qrTimestamp = Date.now();
       try {
         qrCodeDataUrl = await qrcode.toDataURL(qr, {
           width: 320,
@@ -315,6 +329,12 @@ app.post('/api/whatsapp/connect', async (req, res) => {
   const forceClean = req.body?.forceClean || false;
   initClient({ forceClean });
   res.json({ ok: true, message: 'Initialization started', ...getStatus() });
+});
+
+app.post('/api/whatsapp/refresh-qr', async (req, res) => {
+  console.log('🔄 Forced Refreshing WhatsApp QR Code...');
+  initClient({ forceClean: true });
+  res.json({ ok: true, message: 'Refreshing QR code', ...getStatus() });
 });
 
 app.post('/api/whatsapp/pair-code', async (req, res) => {
