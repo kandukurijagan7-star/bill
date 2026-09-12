@@ -2534,13 +2534,20 @@ window.switchTab = function(tabName) {
     }
   });
 
+  try {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  } catch (e) {
+    window.scrollTo(0, 0);
+  }
+
+  const isSmallScreen = window.innerWidth <= 768;
   let title = tabName.charAt(0).toUpperCase() + tabName.slice(1);
-  if (tabName === 'billing') title = 'GST Billing';
-  if (tabName === 'history') title = 'Invoice History';
-  if (tabName === 'products') title = 'Inventory & Products';
-  if (tabName === 'parties') title = 'Client & Party Accounts';
-  if (tabName === 'reports') title = 'Analytics & Reports';
-  if (tabName === 'settings') title = 'System & Automation Settings';
+  if (tabName === 'billing') title = isSmallScreen ? 'GST Bill' : 'GST Billing';
+  if (tabName === 'history') title = isSmallScreen ? 'History' : 'Invoice History';
+  if (tabName === 'products') title = isSmallScreen ? 'Products' : 'Inventory & Products';
+  if (tabName === 'parties') title = isSmallScreen ? 'Parties' : 'Client & Party Accounts';
+  if (tabName === 'reports') title = isSmallScreen ? 'Reports' : 'Analytics & Reports';
+  if (tabName === 'settings') title = isSmallScreen ? 'Settings' : 'System & Automation Settings';
   elements.viewTitle.textContent = title;
 
   const crumbEl = document.getElementById("current-crumb");

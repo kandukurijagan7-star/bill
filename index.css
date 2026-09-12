@@ -3917,7 +3917,7 @@ body {
     height: auto;
     min-height: 100vh;
     overflow-x: hidden;
-    overflow-y: auto;
+    overflow-y: visible;
   }
 
   .sidebar {
@@ -4025,6 +4025,9 @@ body {
   .content-view {
     padding: 14px;
     overflow-x: hidden;
+    overflow-y: visible;
+    height: auto;
+    max-height: none;
   }
 
   .dashboard-hero-card {
@@ -4570,6 +4573,7 @@ body {
   /* 1. Viewport & Layout Containment */
   html, body {
     overflow-x: hidden !important;
+    overflow-y: auto !important;
     width: 100% !important;
     max-width: 100vw !important;
     position: relative;
@@ -4578,16 +4582,21 @@ body {
 
   .dashboard-wrapper {
     overflow-x: hidden !important;
+    overflow-y: visible !important;
     width: 100% !important;
     max-width: 100vw !important;
+    height: auto !important;
     min-height: 100vh;
   }
 
   .main-content {
     width: 100% !important;
     max-width: 100vw !important;
+    height: auto !important;
+    min-height: 100vh;
     overflow-x: hidden !important;
-    padding-bottom: 30px !important;
+    overflow-y: visible !important;
+    padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   .content-view {
@@ -4595,6 +4604,9 @@ body {
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow-y: visible !important;
   }
 
   /* 2. Sleek Mobile Top Header */
@@ -5947,36 +5959,51 @@ body {
 }
 
 @media (max-width: 768px) {
-  /* 1. Viewport & Layout Containment */
+  /* 1. Viewport & Natural Single-Page Scrolling Engine */
   html, body {
     overflow-x: hidden !important;
+    overflow-y: auto !important;
     width: 100% !important;
     max-width: 100vw !important;
+    height: auto !important;
+    min-height: 100% !important;
     position: relative;
     -webkit-text-size-adjust: 100%;
+    -webkit-overflow-scrolling: touch !important;
   }
 
   .dashboard-wrapper {
     overflow-x: hidden !important;
+    overflow-y: visible !important;
     width: 100% !important;
     max-width: 100vw !important;
-    min-height: 100vh;
+    height: auto !important;
+    min-height: 100% !important;
   }
 
-  /* Padding for main content to avoid bottom nav bar overlap */
+  /* Padding for main content to guarantee bottom nav bar clearance */
   .main-content {
     width: 100% !important;
     max-width: 100vw !important;
+    height: auto !important;
+    min-height: 100% !important;
     overflow-x: hidden !important;
-    padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px)) !important;
+    overflow-y: visible !important;
+    padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)) !important;
     min-width: 0 !important;
   }
 
   .content-view {
-    padding: 12px 10px !important;
+    padding: 12px 10px calc(120px + env(safe-area-inset-bottom, 0px)) 10px !important;
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: calc(100vh - 52px) !important;
+    overflow-y: visible !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-y: auto !important;
   }
 
   /* 2. Top Header & Meta Pills Containment */
@@ -6347,12 +6374,22 @@ body {
   }
 
   /* 8. Sticky First Column & Tables Mobile Scrolling */
-  .table-responsive {
+  .table-responsive,
+  .products-table-responsive {
     overflow-x: auto !important;
+    overflow-y: hidden !important;
+    touch-action: pan-x pan-y !important;
     -webkit-overflow-scrolling: touch !important;
     border-radius: 8px !important;
     max-width: 100% !important;
+    width: 100% !important;
     position: relative !important;
+    margin-bottom: 24px !important;
+  }
+
+  .products-main-card {
+    overflow: visible !important;
+    margin-bottom: 30px !important;
   }
 
   .dashboard-table th:first-child,
@@ -6364,6 +6401,8 @@ body {
     background: #ffffff !important;
     z-index: 2 !important;
     box-shadow: 2px 0 6px rgba(0, 0, 0, 0.08) !important;
+    max-width: 160px !important;
+    min-width: 125px !important;
   }
 
   .dashboard-table th:first-child,
