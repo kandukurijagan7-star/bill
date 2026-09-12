@@ -240,14 +240,17 @@ function initMqttBridge() {
             if (status === 'CONNECTED' && client && cmd.phone && cmd.text) {
               const chatId = formatPhone(cmd.phone);
               if (chatId) {
+                console.log(`💬 Sending WhatsApp Message via Cloud Mesh to +${cmd.phone}...`);
                 await client.sendMessage(chatId, cmd.text);
                 logActivity({ type: 'MESSAGE', phone: cmd.phone, status: 'SENT' });
+                console.log(`✅ WhatsApp Message delivered to +${cmd.phone}!`);
               }
             }
           } else if (cmd.command === 'send_invoice' || cmd.action === 'send_invoice') {
             if (status === 'CONNECTED' && client && cmd.phone) {
               const chatId = formatPhone(cmd.phone);
               if (chatId) {
+                console.log(`📄 Sending WhatsApp Invoice & PDF via Cloud Mesh to +${cmd.phone}...`);
                 if (cmd.pdfBase64) {
                   const cleanB64 = cmd.pdfBase64.replace(/^data:application\/pdf;base64,/, '');
                   const media = new MessageMedia('application/pdf', cleanB64, cmd.filename || 'Invoice.pdf');
@@ -256,6 +259,7 @@ function initMqttBridge() {
                   await client.sendMessage(chatId, cmd.text);
                 }
                 logActivity({ type: 'INVOICE_PDF', phone: cmd.phone, filename: cmd.filename, status: 'SENT' });
+                console.log(`🚀 WhatsApp Invoice & PDF delivered to +${cmd.phone}!`);
               }
             }
           }

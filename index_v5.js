@@ -5297,8 +5297,11 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       }
     } else {
       // save_only ("Generate & Save Invoice"):
-      // Fully automated in backend: saves invoice, compiles PDF, syncs Google Drive & auto-dispatches via WhatsApp bot without browser redirect
-      showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} successfully created & saved to Google Sheets!`);
+      // Fully automated: saves invoice, compiles PDF, syncs Google Drive & auto-dispatches via WhatsApp bot without browser redirect
+      showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} successfully created & saved!`);
+      if (globalSettings.whatsappAutoSend !== false) {
+        shareInvoicePdfNative(invoiceRecord.details, null, false, precomputedBase64);
+      }
       if (typeof openInvoiceSuccessModal === 'function') {
         openInvoiceSuccessModal(invoiceRecord);
       } else {
@@ -7527,25 +7530,113 @@ async function autoDispatchInvoiceToWhatsApp(details, precomputedBase64 = null) 
   const text = typeof generateWhatsAppInvoiceMessage === 'function'
     ? generateWhatsAppInvoiceMessage(details)
     : formatInvoiceWhatsAppSummary(details);
+async function dispatchWhatsAppBotInvoice({ phone, text, filename, pdfBase64 }) {
+  if (!phone) return false;
+  const cleanPhone = formatWhatsAppPhone(phone);
+  if (!cleanPhone) return false;
+
+  // 1. Try local HTTP POST if running locally on port 3001
+  if (window.location.port === '3001' || window.location.hostname === 'localhost') {
+    try {
+      const controller = new AbortController();
+      const tId = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(getWhatsAppApiEndpoint('/api/whatsapp/send-invoice'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone, text, filename, pdfBase64 }),
+        signal: controller.signal
+      });
+      clearTimeout(tId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.ok) return true;
+      }
+    } catch (e) {
+      console.log("Local HTTP POST unavailable on Netlify/HTTPS. Relaying via MQTT Mesh...");
+    }
+  }
+
+  // 2. Relay via EMQX MQTT Cloud Mesh (Works 100% on Netlify!)
+  if (realtimeMeshClient && realtimeMeshClient.connected) {
+    try {
+      realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({
+        command: 'send_invoice',
+        phone: cleanPhone,
+        text,
+        filename,
+        pdfBase64,
+        timestamp: Date.now()
+      }));
+      console.log(`⚡ Automated WhatsApp Invoice & PDF dispatched to +${cleanPhone} via MQTT Mesh!`);
+      return true;
+    } catch (mqttErr) {
+      console.warn("MQTT Mesh publish error:", mqttErr);
+    }
+  }
+
+  return false;
+}
+
+async function dispatchWhatsAppBotMessage({ phone, text }) {
+  if (!phone) return false;
+  const cleanPhone = formatWhatsAppPhone(phone);
+  if (!cleanPhone) return false;
+
+  if (window.location.port === '3001' || window.location.hostname === 'localhost') {
+    try {
+      const controller = new AbortController();
+      const tId = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(getWhatsAppApiEndpoint('/api/whatsapp/send-message'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone, text }),
+        signal: controller.signal
+      });
+      clearTimeout(tId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.ok) return true;
+      }
+    } catch (e) {
+      console.log("Local HTTP POST unavailable on Netlify/HTTPS. Relaying via MQTT Mesh...");
+    }
+  }
+
+  if (realtimeMeshClient && realtimeMeshClient.connected) {
+    try {
+      realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({
+        command: 'send_message',
+        phone: cleanPhone,
+        text,
+        timestamp: Date.now()
+      }));
+      console.log(`⚡ Automated WhatsApp Message dispatched to +${cleanPhone} via MQTT Mesh!`);
+      return true;
+    } catch (mqttErr) {
+      console.warn("MQTT Mesh publish error:", mqttErr);
+    }
+  }
+
+  return false;
+}
+
+async function autoDispatchInvoiceToWhatsApp(details, text, precomputedBase64 = null) {
+  if (!details) return false;
+  const recipientsInfo = typeof getInvoiceRecipients === 'function'
+    ? getInvoiceRecipients(details)
+    : { primaryPhone: getCustomerPhoneNumber(details), consigneeName: details.consignee?.name, buyerName: details.buyer?.name, allRecipients: [] };
+
+  if (!recipientsInfo.primaryPhone && (!recipientsInfo.allRecipients || recipientsInfo.allRecipients.length === 0)) {
+    console.log("Auto WhatsApp dispatch skipped: No recipient phone numbers found.");
+    return false;
+  }
+
   const custName = details.consignee?.name || details.buyer?.name || details.customerName || 'Customer';
   const customerClean = custName.replace(/[^a-zA-Z0-9]/g, '_');
   const filename = `Invoice_${details.invoiceNo}_${customerClean}.pdf`;
 
   // Check live status if needed
   let isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED');
-  if (!isBotReady) {
-    try {
-      const controller = new AbortController();
-      const tId = setTimeout(() => controller.abort(), 2000);
-      const liveRes = await fetch(getWhatsAppApiEndpoint('/api/whatsapp/status'), { signal: controller.signal }).then(r => r.json()).catch(() => null);
-      clearTimeout(tId);
-      if (liveRes && (liveRes.isReady || liveRes.status === 'CONNECTED')) {
-        whatsappBotStatus = liveRes;
-        isBotReady = true;
-        updateWhatsAppBotPillUI(whatsappBotStatus);
-      }
-    } catch (e) {}
-  }
 
   let pdfBase64 = precomputedBase64;
   if (!pdfBase64) {
@@ -7564,27 +7655,16 @@ async function autoDispatchInvoiceToWhatsApp(details, precomputedBase64 = null) 
     // Prioritize Consignee first, then Receiver
     for (const rec of recipientsInfo.allRecipients) {
       if (!rec.clean) continue;
-      try {
-        const res = await fetch(getWhatsAppApiEndpoint('/api/whatsapp/send-invoice'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone: rec.clean,
-            text,
-            filename,
-            pdfBase64
-          })
-        });
-        const data = await res.json();
-        if (data && data.ok) {
-          anySent = true;
-          dispatchedList.push(`${rec.label} (+${rec.clean})`);
-          console.log(`✅ Automated WhatsApp Invoice sent to ${rec.label} (+${rec.clean})`);
-        } else {
-          console.warn(`Auto WhatsApp dispatch response for +${rec.clean}:`, data);
-        }
-      } catch (err) {
-        console.warn(`Auto WhatsApp dispatch network error for +${rec.clean}:`, err);
+      const ok = await dispatchWhatsAppBotInvoice({
+        phone: rec.clean,
+        text,
+        filename,
+        pdfBase64
+      });
+      if (ok) {
+        anySent = true;
+        dispatchedList.push(`${rec.label} (+${rec.clean})`);
+        console.log(`✅ Automated WhatsApp Invoice sent to ${rec.label} (+${rec.clean})`);
       }
     }
 
@@ -7594,7 +7674,6 @@ async function autoDispatchInvoiceToWhatsApp(details, precomputedBase64 = null) 
       return true;
     }
   } else {
-    // When bot is offline or on web cloud mode, notify cashier that 1-click share is ready in modal
     const recName = recipientsInfo.consigneeName || recipientsInfo.buyerName || 'Customer';
     const targetPhone = recipientsInfo.primaryPhone ? `to ${recName} (+${recipientsInfo.primaryPhone})` : '';
     console.log("WhatsApp Bot is offline or in cloud web mode. 1-Click WhatsApp ready.");
@@ -7623,7 +7702,6 @@ window.shareInvoicePdfNative = async function(details, btnEl = null, force1Click
   if (rawPhone && rawPhone.toString().replace(/\D/g, '').length >= 10) {
     cleanPhone = formatWhatsAppPhone(rawPhone);
   } else {
-    // Automated lookup from partiesDb or past invoicesDb without blocking prompt
     let autoFound = "";
     if (primaryName && primaryName !== 'Consignee / Customer') {
       const match = (partiesDb || []).find(p => p && p.name && p.name.trim().toLowerCase() === primaryName.trim().toLowerCase() && p.phone);
@@ -7664,20 +7742,6 @@ window.shareInvoicePdfNative = async function(details, btnEl = null, force1Click
 
   // Always check live bot status first!
   let isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED');
-  if (!isBotReady) {
-    try {
-      const controller = new AbortController();
-      const tId = setTimeout(() => controller.abort(), 2000);
-      const liveRes = await fetch(getWhatsAppApiEndpoint('/api/whatsapp/status'), { signal: controller.signal })
-        .then(r => r.json()).catch(() => null);
-      clearTimeout(tId);
-      if (liveRes && (liveRes.isReady || liveRes.status === 'CONNECTED')) {
-        whatsappBotStatus = liveRes;
-        isBotReady = true;
-        updateWhatsAppBotPillUI(whatsappBotStatus);
-      }
-    } catch (e) {}
-  }
 
   // --- AUTOMATED BACKGROUND BOT DISPATCH (SILENT - ZERO BROWSER REDIRECT) ---
   if (isBotReady && cleanPhone && !force1Click) {
@@ -7708,13 +7772,13 @@ window.shareInvoicePdfNative = async function(details, btnEl = null, force1Click
 
       for (const rec of targetsToSend) {
         if (!rec.clean) continue;
-        const fastRes = await fetch(getWhatsAppApiEndpoint('/api/whatsapp/send-invoice'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: rec.clean, text: fullShareText, filename, pdfBase64 })
+        const ok = await dispatchWhatsAppBotInvoice({
+          phone: rec.clean,
+          text: fullShareText,
+          filename,
+          pdfBase64
         });
-        const fastData = await fastRes.json();
-        if (fastData && fastData.ok) {
+        if (ok) {
           sentCount++;
           sentLabels.push(`${rec.label} (+${rec.clean})`);
         }
@@ -8005,13 +8069,8 @@ window.sendWhatsAppPaymentReminder = async function(id, btnEl = null) {
 
   if (isBotReady && cleanPhone) {
     try {
-      const res = await fetch(getWhatsAppApiEndpoint('/api/whatsapp/send-message'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: cleanPhone, text: reminderText })
-      });
-      const data = await res.json();
-      if (data && data.ok) {
+      const ok = await dispatchWhatsAppBotMessage({ phone: cleanPhone, text: reminderText });
+      if (ok) {
         if (typeof playSuccessChime === 'function') playSuccessChime();
         if (btnEl && btnEl.tagName) {
           btnEl.innerHTML = `<i class="fa-solid fa-circle-check text-success"></i> Sent via Bot!`;
@@ -8024,7 +8083,7 @@ window.sendWhatsAppPaymentReminder = async function(id, btnEl = null) {
         return true;
       }
     } catch (e) {
-      console.warn("Bot reminder notice:", e);
+      console.warn("Payment reminder send error:", e);
     }
   }
 
@@ -9203,13 +9262,8 @@ window.sendPartyPaymentReminderWhatsApp = async function(partyName, phone) {
   if (isBotReady && cleanPhone) {
     try {
       showFloatingToast(`🤖 Sending payment reminder silently to ${partyName} via WhatsApp Bot...`, 3000);
-      const res = await fetch(getWhatsAppApiEndpoint('/api/whatsapp/send-message'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: cleanPhone, text })
-      });
-      const data = await res.json();
-      if (data && data.ok) {
+      const ok = await dispatchWhatsAppBotMessage({ phone: cleanPhone, text });
+      if (ok) {
         if (typeof playSuccessChime === 'function') playSuccessChime();
         showFloatingToast(`🚀 Outstanding dues reminder sent silently to ${partyName} (+${cleanPhone}) via WhatsApp Bot!`, 5000);
         return true;
