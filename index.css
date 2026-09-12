@@ -3154,15 +3154,22 @@ body {
 }
 
 .bank-card {
-  width: 37%;
+  width: 33%;
 }
 
 .terms-card {
-  width: 38%;
+  width: 31%;
+}
+
+.qr-card {
+  width: 16%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .sig-card {
-  width: 25%;
+  width: 20%;
   display: flex;
   flex-direction: column;
   justify-content: space-between;

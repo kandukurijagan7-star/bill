@@ -4463,6 +4463,22 @@ window.handleScannedBarcode = function(code) {
   if (!code) return;
   const clean = String(code).trim();
 
+  // Intercept Invoice Verification QR scans
+  if (clean.includes("verify_invoice=") || clean.includes("/?verify_invoice=")) {
+    if (typeof window.closeBarcodeScannerModal === "function") window.closeBarcodeScannerModal();
+    window.playScannerBeep();
+    let invNo = clean;
+    try {
+      if (clean.includes("verify_invoice=")) {
+        invNo = clean.split("verify_invoice=")[1].split("&")[0];
+      }
+    } catch(e){}
+    if (typeof openInvoiceVerificationModal === "function") {
+      openInvoiceVerificationModal(invNo);
+    }
+    return;
+  }
+
   // Search product in productsDb
   let matched = (productsDb || []).find(p => p && p.barcode && String(p.barcode).trim() === clean);
   if (!matched) {
@@ -5713,6 +5729,15 @@ function populateA4PrintOverlay(invoice) {
   if (bankIfscEl) bankIfscEl.textContent = bank.ifsc || "SBIN0000911";
   const bankBranchEl = document.getElementById("p-print-bank-branch");
   if (bankBranchEl) bankBranchEl.textContent = bank.branch || "Repalle";
+
+  // Verification & Payment QR Code
+  const verifyQrImg = document.getElementById("p-print-verify-qr-img");
+  if (verifyQrImg) {
+    const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
+      ? window.getInvoiceVerificationUrl(invoice.invoiceNo)
+      : `https://aaryanaqua.netlify.app/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
+    verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(verifyUrl)}`;
+  }
 }
 
 // --- POPULATE THERMAL POS PRINT OVERLAY ---
@@ -5788,7 +5813,10 @@ function populateThermalPrintOverlay(invoice) {
   const upiUrl = `upi://pay?pa=${realUpiId}&pn=${encodeURIComponent(cName.replace(/[^a-zA-Z0-9 ]/g, '').trim())}&am=${amountToPay.toFixed(2)}&cu=INR&tn=Bill${cleanInvNo}`;
   const qrImg = document.getElementById("th-upi-qr-img");
   if (qrImg) {
-    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(upiUrl)}`;
+    const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
+      ? window.getInvoiceVerificationUrl(invoice.invoiceNo)
+      : `https://aaryanaqua.netlify.app/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
+    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}`;
   }
 }
 
@@ -12078,4 +12106,281 @@ window.printShopUpiStand = function() {
   `);
   printWindow.document.close();
 };
+
+// --- SMART INVOICE VERIFICATION & PAYMENT SYSTEM ---
+window.currentVerifiedInvoiceNo = null;
+
+window.getInvoiceVerificationUrl = function(invoiceNo) {
+  const baseUrl = (window.location.origin && !window.location.origin.includes("file://"))
+    ? window.location.origin
+    : "https://aaryanaqua.netlify.app";
+  return `${baseUrl}/?verify_invoice=${encodeURIComponent(invoiceNo || '')}`;
+};
+
+window.openInvoiceVerificationModal = function(invoiceNo) {
+  const modal = document.getElementById("invoice-verification-modal");
+  if (!modal) return;
+
+  const cleanNo = String(invoiceNo || "").trim();
+  window.currentVerifiedInvoiceNo = cleanNo;
+
+  // Search in invoicesDb
+  const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
+    String(i.invoiceNo || "").trim().toLowerCase() === cleanNo.toLowerCase() ||
+    String(i.id || "").trim().toLowerCase() === cleanNo.toLowerCase()
+  );
+
+  const stateInvalid = document.getElementById("verify-state-invalid");
+  const stateValid = document.getElementById("verify-state-valid");
+  const header = document.getElementById("verify-modal-header");
+  const titleEl = document.getElementById("verify-modal-title");
+  const subtitleEl = document.getElementById("verify-modal-subtitle");
+  const badgeIcon = document.getElementById("verify-modal-badge-icon");
+  const printBtn = document.getElementById("verify-print-btn");
+
+  if (!inv) {
+    // INVALID / UNVERIFIED STATE
+    if (stateInvalid) stateInvalid.style.display = "block";
+    if (stateValid) stateValid.style.display = "none";
+    if (header) header.style.background = "linear-gradient(135deg, #7f1d1d, #991b1b)";
+    if (titleEl) titleEl.textContent = "Invoice Verification — Unverified";
+    if (subtitleEl) subtitleEl.textContent = "Warning: Record Not Found";
+    if (badgeIcon) {
+      badgeIcon.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
+      badgeIcon.style.background = "rgba(239, 68, 68, 0.3)";
+    }
+    const invCodeEl = document.getElementById("verify-invalid-code");
+    if (invCodeEl) invCodeEl.textContent = cleanNo || "N/A";
+    if (printBtn) printBtn.style.display = "none";
+
+    modal.classList.remove("hidden");
+    return;
+  }
+
+  // VALID INVOICE STATE
+  if (stateInvalid) stateInvalid.style.display = "none";
+  if (stateValid) stateValid.style.display = "block";
+
+  const invDetails = inv.details || inv;
+  const invNo = inv.invoiceNo || invDetails.invoiceNo || cleanNo;
+  const invDate = invDetails.invoiceDate || inv.date || inv.createdAt;
+  const custName = inv.buyerName || invDetails.buyer?.name || inv.customerName || "Customer";
+  const custPhone = invDetails.buyer?.phone || inv.phone || inv.customerPhone || "N/A";
+  const totalAmt = Number(inv.total || invDetails.total || 0);
+  const paidAmt = Number(inv.paidAmount !== undefined ? inv.paidAmount : (inv.status === 'Paid' ? totalAmt : 0));
+  const balDue = Number(inv.balanceDue !== undefined ? inv.balanceDue : Math.max(0, totalAmt - paidAmt));
+
+  document.getElementById("verify-inv-no").textContent = invNo;
+  document.getElementById("verify-inv-date").textContent = (typeof formatInputDateString === "function") ? formatInputDateString(invDate) : (invDate || 'N/A');
+  document.getElementById("verify-inv-customer").textContent = custName;
+  document.getElementById("verify-inv-phone").textContent = custPhone;
+  document.getElementById("verify-inv-total").textContent = formatCurrency(totalAmt);
+  document.getElementById("verify-inv-paid").textContent = formatCurrency(paidAmt);
+  document.getElementById("verify-inv-balance").textContent = formatCurrency(balDue);
+
+  const statusBanner = document.getElementById("verify-status-banner");
+  const statusIcon = document.getElementById("verify-status-icon");
+  const statusHeading = document.getElementById("verify-status-heading");
+  const statusSubtext = document.getElementById("verify-status-subtext");
+  const paymentSection = document.getElementById("verify-payment-section");
+  const fullyPaidSection = document.getElementById("verify-fully-paid-section");
+
+  if (balDue > 0.5) {
+    // PENDING BALANCE
+    if (header) header.style.background = "linear-gradient(135deg, #9a3412, #c2410c)";
+    if (titleEl) titleEl.textContent = "Invoice Verified — Payment Pending";
+    if (subtitleEl) subtitleEl.textContent = "Official Registry • Action Required";
+    if (badgeIcon) {
+      badgeIcon.innerHTML = '<i class="fa-solid fa-clock"></i>';
+      badgeIcon.style.background = "rgba(249, 115, 22, 0.3)";
+    }
+
+    if (statusBanner) {
+      statusBanner.style.background = "#fff7ed";
+      statusBanner.style.border = "1px solid #ffedd5";
+      statusBanner.style.color = "#c2410c";
+    }
+    if (statusIcon) {
+      statusIcon.className = "fa-solid fa-circle-exclamation";
+      statusIcon.style.color = "#ea580c";
+    }
+    if (statusHeading) statusHeading.textContent = "PAYMENT PENDING (OUTSTANDING BALANCE)";
+    if (statusSubtext) statusSubtext.textContent = `Balance Due: ₹ ${formatCurrency(balDue)}`;
+
+    if (paymentSection) paymentSection.style.display = "block";
+    if (fullyPaidSection) fullyPaidSection.style.display = "none";
+
+    const payDisplay = document.getElementById("verify-pay-amount-display");
+    if (payDisplay) payDisplay.textContent = formatCurrency(balDue);
+
+    // Setup UPI Payment Links
+    const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
+    const cName = (globalSettings.company?.name || "Aaryan Aqua Needs").replace(/[^a-zA-Z0-9 ]/g, '').trim();
+    const cleanInvStr = String(invNo).replace(/[^a-zA-Z0-9]/g, '');
+    const upiUri = `upi://pay?pa=${realUpiId}&pn=${encodeURIComponent(cName)}&am=${balDue.toFixed(2)}&cu=INR&tn=Bill${cleanInvStr}`;
+
+    const upiQrImg = document.getElementById("verify-upi-qr-img");
+    if (upiQrImg) {
+      upiQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUri)}`;
+    }
+
+    const upiText = document.getElementById("verify-upi-id-text");
+    if (upiText) upiText.textContent = realUpiId;
+
+    const gpayBtn = document.getElementById("verify-gpay-btn");
+    const phonepeBtn = document.getElementById("verify-phonepe-btn");
+    const paytmBtn = document.getElementById("verify-paytm-btn");
+    if (gpayBtn) gpayBtn.href = upiUri;
+    if (phonepeBtn) phonepeBtn.href = upiUri;
+    if (paytmBtn) paytmBtn.href = upiUri;
+
+  } else {
+    // FULLY PAID
+    if (header) header.style.background = "linear-gradient(135deg, #14532d, #15803d)";
+    if (titleEl) titleEl.textContent = "Invoice Verified — Fully Paid";
+    if (subtitleEl) subtitleEl.textContent = "Official Registry • 100% Settled";
+    if (badgeIcon) {
+      badgeIcon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
+      badgeIcon.style.background = "rgba(34, 197, 94, 0.3)";
+    }
+
+    if (statusBanner) {
+      statusBanner.style.background = "#f0fdf4";
+      statusBanner.style.border = "1px solid #bbf7d0";
+      statusBanner.style.color = "#15803d";
+    }
+    if (statusIcon) {
+      statusIcon.className = "fa-solid fa-circle-check";
+      statusIcon.style.color = "#16a34a";
+    }
+    if (statusHeading) statusHeading.textContent = "OFFICIALLY VERIFIED — 100% FULLY PAID";
+    if (statusSubtext) statusSubtext.textContent = "Balance Remaining: ₹ 0.00";
+
+    if (paymentSection) paymentSection.style.display = "none";
+    if (fullyPaidSection) fullyPaidSection.style.display = "block";
+  }
+
+  if (printBtn) printBtn.style.display = "inline-flex";
+
+  modal.classList.remove("hidden");
+};
+
+window.closeInvoiceVerificationModal = function() {
+  const modal = document.getElementById("invoice-verification-modal");
+  if (modal) modal.classList.add("hidden");
+};
+
+window.lookupManualInvoiceVerification = function() {
+  const input = document.getElementById("verify-manual-search-input");
+  if (input && input.value.trim()) {
+    openInvoiceVerificationModal(input.value.trim());
+  }
+};
+
+window.printVerifiedInvoice = function() {
+  if (window.currentVerifiedInvoiceNo) {
+    const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
+      String(i.invoiceNo || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase()
+    );
+    if (inv) {
+      populateA4PrintOverlay(inv.details || inv);
+      window.print();
+    }
+  }
+};
+
+window.submitInvoicePaymentSettlement = function() {
+  if (!window.currentVerifiedInvoiceNo) return;
+  const invNo = String(window.currentVerifiedInvoiceNo).trim();
+  const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
+    String(i.invoiceNo || "").trim().toLowerCase() === invNo.toLowerCase() ||
+    String(i.id || "").trim().toLowerCase() === invNo.toLowerCase()
+  );
+
+  if (!inv) {
+    if (typeof showNotification === "function") showNotification("Error: Invoice record not found.", "error");
+    return;
+  }
+
+  const payMode = document.getElementById("verify-pay-mode-select")?.value || "UPI / Online";
+  const payRef = document.getElementById("verify-pay-ref-input")?.value.trim() || "";
+  const settledAmount = Number(inv.balanceDue || (inv.total - (inv.paidAmount || 0)));
+
+  // Update Invoice Record
+  inv.paidAmount = Number(inv.total || 0);
+  inv.balanceDue = 0;
+  inv.paymentStatus = "Paid";
+  inv.paymentMode = payMode;
+  if (payRef) inv.paymentReference = payRef;
+
+  if (inv.details) {
+    inv.details.paidAmount = inv.paidAmount;
+    inv.details.balanceDue = 0;
+    inv.details.paymentStatus = "Paid";
+    inv.details.paymentMode = payMode;
+    if (payRef) inv.details.paymentReference = payRef;
+  }
+
+  if (!inv.paymentHistory) inv.paymentHistory = [];
+  inv.paymentHistory.push({
+    date: new Date().toISOString(),
+    amount: settledAmount,
+    mode: payMode,
+    reference: payRef,
+    source: "QR Verification Portal Settlement"
+  });
+
+  // Save to database & sync
+  if (typeof saveToLocalStorage === "function") saveToLocalStorage();
+  if (typeof saveInvoicesToDB === "function") saveInvoicesToDB();
+  if (typeof renderInvoicesTable === "function") renderInvoicesTable();
+  if (typeof updateDashboardStats === "function") updateDashboardStats();
+
+  // Mesh MQTT Sync
+  if (typeof publishMeshDatabaseUpdate === "function") {
+    try { publishMeshDatabaseUpdate("invoicesDb", inv); } catch (e) { console.warn(e); }
+  }
+
+  // Automatic WhatsApp Receipt Dispatch
+  const custPhone = inv.buyerPhone || inv.details?.buyer?.phone || inv.phone || "";
+  if (custPhone) {
+    const msg = `✅ *Payment Received & Verified!*\n\n` +
+      `🧾 *Invoice No:* ${inv.invoiceNo}\n` +
+      `👤 *Customer:* ${inv.buyerName || inv.details?.buyer?.name || 'Customer'}\n` +
+      `💰 *Amount Paid:* ₹ ${formatCurrency(settledAmount)}\n` +
+      `💳 *Payment Mode:* ${payMode}` + (payRef ? ` (Ref: ${payRef})` : '') + `\n` +
+      `📊 *Remaining Balance:* ₹ 0.00 (Fully Paid)\n\n` +
+      `Thank you for your business with *Aaryan Aqua Needs*! 🌊`;
+
+    if (typeof dispatchWhatsAppBotMessage === "function") {
+      dispatchWhatsAppBotMessage(custPhone, msg);
+    }
+  }
+
+  if (typeof showNotification === "function") {
+    showNotification(`Payment of ₹ ${formatCurrency(settledAmount)} recorded! Invoice #${inv.invoiceNo} is now fully paid.`, "success");
+  }
+
+  // Re-render modal in fully paid state
+  openInvoiceVerificationModal(inv.invoiceNo);
+};
+
+// Check for verify_invoice URL query parameters on page load
+window.checkUrlVerificationParams = function() {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const verifyInvoiceParam = urlParams.get("verify_invoice");
+    if (verifyInvoiceParam) {
+      setTimeout(() => {
+        openInvoiceVerificationModal(verifyInvoiceParam);
+      }, 500);
+    }
+  } catch (e) {
+    console.warn("Error checking URL verification params:", e);
+  }
+};
+
+document.addEventListener("DOMContentLoaded", () => {
+  window.checkUrlVerificationParams();
+});
 

@@ -2340,6 +2340,17 @@
           </div>
         </div>
         
+        <!-- Verify & Pay QR Code card -->
+        <div class="bottom-card qr-card" style="text-align: center;">
+          <div class="bottom-card-header" style="justify-content: center; background: #004b73; color: #ffffff;">
+            <i class="fa-solid fa-qrcode"></i> VERIFY & PAY
+          </div>
+          <div class="bottom-card-body" style="padding: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+            <img id="p-print-verify-qr-img" src="" alt="Scan to Verify & Pay" style="width: 72px; height: 72px; object-fit: contain; display: block; margin: 0 auto;">
+            <span style="font-size: 6pt; font-weight: 700; color: #004b73; display: block; margin-top: 2px;">Scan with Camera / UPI</span>
+          </div>
+        </div>
+        
         <!-- Authorized Signatory card -->
         <div class="bottom-card sig-card">
           <div class="sig-title">for <span id="p-print-sign-company">AARYAN AQUA NEEDS</span></div>
@@ -2546,6 +2557,162 @@
         <button class="btn btn-secondary" onclick="closeBalanceQrModal()">Close</button>
         <button class="btn btn-primary" onclick="shareBalanceQrWhatsApp()"><i class="fa-brands fa-whatsapp"></i> Share Reminder</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- SMART INVOICE VERIFICATION & PAYMENT MODAL -->
+  <!-- ========================================== -->
+  <div id="invoice-verification-modal" class="modal-overlay hidden no-print" onclick="if(event.target === this) closeInvoiceVerificationModal();" style="z-index: 2147483645; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; padding: 15px; overflow-y: auto;">
+    <div class="modal-box text-center" style="max-width: 480px; width: 100%; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4); text-align: left;">
+      
+      <!-- Top Banner -->
+      <div id="verify-modal-header" style="padding: 16px 20px; color: #ffffff; background: linear-gradient(135deg, #0f172a, #1e293b); display: flex; align-items: center; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div id="verify-modal-badge-icon" style="width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; background: rgba(255,255,255,0.2);">
+            <i class="fa-solid fa-shield-halved"></i>
+          </div>
+          <div>
+            <h3 id="verify-modal-title" style="margin: 0; font-size: 16px; font-weight: 700; color: #ffffff;">Invoice Verification Portal</h3>
+            <p id="verify-modal-subtitle" style="margin: 2px 0 0 0; font-size: 11px; opacity: 0.9;">Aaryan Aqua Needs Official Registry</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeInvoiceVerificationModal()" style="background: rgba(255,255,255,0.15); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div style="padding: 20px; max-height: 80vh; overflow-y: auto;">
+
+        <!-- STATE A: INVALID / UNVERIFIED INVOICE -->
+        <div id="verify-state-invalid" style="display: none; text-align: center; padding: 10px 0;">
+          <div style="width: 70px; height: 70px; border-radius: 50%; background: #fee2e2; color: #ef4444; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; font-size: 32px; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <h4 style="margin: 0 0 8px 0; color: #991b1b; font-size: 18px; font-weight: 700;">Invalid or Unverified Invoice</h4>
+          <div style="background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 12px; font-size: 12.5px; color: #7f1d1d; line-height: 1.5; margin-bottom: 16px;">
+            Warning: The QR code or invoice code (<strong id="verify-invalid-code">UNKNOWN</strong>) is invalid or was not found in our registry.
+          </div>
+          <p style="font-size: 12px; color: #64748b; margin-bottom: 16px;">If you believe this is an error, check the invoice number or contact Aaryan Aqua Needs support.</p>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="verify-manual-search-input" class="form-control" placeholder="Enter Invoice No. (e.g. 0001)" style="flex: 1; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+            <button type="button" class="btn btn-primary" onclick="lookupManualInvoiceVerification()" style="padding: 8px 16px;"><i class="fa-solid fa-magnifying-glass"></i> Check</button>
+          </div>
+        </div>
+
+        <!-- STATE B & C: VALID INVOICE SUMMARY -->
+        <div id="verify-state-valid" style="display: none;">
+          <!-- Status Banner -->
+          <div id="verify-status-banner" style="border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px;">
+            <i id="verify-status-icon" class="fa-solid fa-circle-check" style="font-size: 24px;"></i>
+            <div>
+              <div id="verify-status-heading" style="font-size: 14px; font-weight: 700;">VERIFIED INVOICE</div>
+              <div id="verify-status-subtext" style="font-size: 11px; opacity: 0.9;">Official Record</div>
+            </div>
+          </div>
+
+          <!-- Invoice Details Card -->
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; font-size: 12.5px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="color: #64748b;">Invoice #:</span>
+              <span style="font-weight: 700; color: #0f172a;" id="verify-inv-no">#0001</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="color: #64748b;">Date:</span>
+              <span style="font-weight: 600;" id="verify-inv-date">--/--/----</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="color: #64748b;">Customer:</span>
+              <span style="font-weight: 700; color: #0284c7;" id="verify-inv-customer">--</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="color: #64748b;">Phone:</span>
+              <span style="font-weight: 600;" id="verify-inv-phone">--</span>
+            </div>
+            <hr style="margin: 8px 0; border: none; border-top: 1px dashed #cbd5e1;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="color: #64748b;">Total Invoice Amount:</span>
+              <span style="font-weight: 700; font-size: 13px;">₹ <span id="verify-inv-total">0.00</span></span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="color: #64748b;">Amount Paid:</span>
+              <span style="font-weight: 600; color: #16a34a;">₹ <span id="verify-inv-paid">0.00</span></span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; margin-top: 4px;">
+              <span id="verify-inv-balance-label" style="color: #dc2626;">Pending Balance:</span>
+              <span id="verify-inv-balance-val" style="color: #dc2626;">₹ <span id="verify-inv-balance">0.00</span></span>
+            </div>
+          </div>
+
+          <!-- PAYMENT COMPLETION SECTION (Shown only when balance > 0) -->
+          <div id="verify-payment-section" style="display: none; background: #fff8f6; border: 1.5px solid #ffedd5; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+            <div style="text-align: center; margin-bottom: 12px;">
+              <h5 style="margin: 0 0 4px 0; color: #c2410c; font-size: 15px; font-weight: 700;">
+                <i class="fa-solid fa-circle-exclamation"></i> Complete Outstanding Balance
+              </h5>
+              <p style="margin: 0; font-size: 11.5px; color: #9a3412;">Scan QR or pay below to settle remaining ₹ <strong id="verify-pay-amount-display">0.00</strong></p>
+            </div>
+
+            <!-- UPI Payment QR Code & Apps -->
+            <div style="text-align: center; background: #ffffff; border: 1px solid #fed7aa; border-radius: 10px; padding: 12px; margin-bottom: 12px;">
+              <img id="verify-upi-qr-img" src="" style="width: 170px; height: 170px; object-fit: contain; margin: 0 auto 8px auto; display: block; border: 1px solid #e2e8f0; border-radius: 8px; padding: 4px;" alt="UPI QR Code">
+              <div style="font-size: 11px; font-weight: 700; color: #0a4b5c; margin-bottom: 8px;">
+                UPI ID: <span id="verify-upi-id-text" style="color: #0284c7; background: #e0f2fe; padding: 2px 6px; border-radius: 4px;">7386262139@upi</span>
+              </div>
+              <div style="display: flex; justify-content: center; gap: 6px; flex-wrap: wrap;">
+                <a id="verify-gpay-btn" href="#" target="_blank" class="btn btn-sm" style="background: #ffffff; border: 1px solid #cbd5e1; color: #1e293b; font-size: 11px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px;">
+                  <i class="fa-brands fa-google-pay" style="color: #4285f4; font-size: 14px;"></i> GPay
+                </a>
+                <a id="verify-phonepe-btn" href="#" target="_blank" class="btn btn-sm" style="background: #ffffff; border: 1px solid #cbd5e1; color: #1e293b; font-size: 11px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px;">
+                  <i class="fa-solid fa-mobile-screen-button" style="color: #5f259f; font-size: 13px;"></i> PhonePe
+                </a>
+                <a id="verify-paytm-btn" href="#" target="_blank" class="btn btn-sm" style="background: #ffffff; border: 1px solid #cbd5e1; color: #1e293b; font-size: 11px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px;">
+                  <i class="fa-solid fa-wallet" style="color: #00baf2; font-size: 13px;"></i> Paytm
+                </a>
+              </div>
+            </div>
+
+            <!-- Done Payment Form -->
+            <div style="background: #ffffff; border: 1px solid #fed7aa; border-radius: 10px; padding: 12px;">
+              <div style="font-size: 12px; font-weight: 700; color: #0f172a; margin-bottom: 8px;">Record / Done Payment</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                <div>
+                  <label style="font-size: 10.5px; color: #64748b; font-weight: 600; display: block; margin-bottom: 2px;">Payment Mode</label>
+                  <select id="verify-pay-mode-select" class="form-control" style="font-size: 12px; padding: 6px 8px;">
+                    <option value="UPI / Online">UPI / Online</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
+                    <option value="Cheque">Cheque</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size: 10.5px; color: #64748b; font-weight: 600; display: block; margin-bottom: 2px;">Ref / UTR No. (Optional)</label>
+                  <input type="text" id="verify-pay-ref-input" class="form-control" placeholder="e.g. UTR1293847" style="font-size: 12px; padding: 6px 8px;">
+                </div>
+              </div>
+              <button type="button" id="verify-done-pay-btn" onclick="submitInvoicePaymentSettlement()" class="btn btn-success" style="width: 100%; padding: 10px; font-weight: 700; font-size: 13.5px; background: linear-gradient(135deg, #16a34a, #15803d); border: none; border-radius: 8px; box-shadow: 0 4px 10px rgba(22, 163, 74, 0.3); color: white; cursor: pointer;">
+                <i class="fa-solid fa-circle-check"></i> Done Payment & Settle Balance
+              </button>
+            </div>
+          </div>
+
+          <!-- FULLY PAID BADGE (Shown when balance == 0) -->
+          <div id="verify-fully-paid-section" style="display: none; background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 12px; padding: 16px; text-align: center; margin-bottom: 16px;">
+            <div style="width: 50px; height: 50px; border-radius: 50%; background: #dcfce7; color: #16a34a; display: flex; align-items: center; justify-content: center; margin: 0 auto 8px auto; font-size: 24px;">
+              <i class="fa-solid fa-circle-check"></i>
+            </div>
+            <h4 style="margin: 0 0 4px 0; color: #15803d; font-size: 16px; font-weight: 700;">Payment Completed & Verified</h4>
+            <p style="margin: 0; font-size: 12px; color: #166534;">This invoice is 100% fully paid. Remaining balance: ₹ 0.00</p>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Footer Buttons -->
+      <div style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 8px;">
+        <button type="button" class="btn btn-secondary" onclick="closeInvoiceVerificationModal()">Close</button>
+        <button type="button" id="verify-print-btn" class="btn btn-primary" style="display: none;" onclick="printVerifiedInvoice()"><i class="fa-solid fa-print"></i> Print Invoice</button>
+      </div>
+
     </div>
   </div>
 
