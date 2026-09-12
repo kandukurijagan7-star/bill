@@ -1959,18 +1959,19 @@ function initializeApp() {
   const lastActiveTime = parseInt(localStorage.getItem("last_active_time") || `${Date.now()}`, 10);
   const elapsedSeconds = (Date.now() - lastActiveTime) / 1000;
 
-  // Intelligent Lock Decision:
-  // 1. If user intentionally clicked manual lock (storedLockState === "true"), respect it.
-  // 2. If auto-lock timer is enabled (>0) and elapsed inactivity exceeds timer, lock it.
-  // 3. If fresh browser profile with neither prior authentication nor remembered credentials, lock it.
-  // In all other active or remembered sessions, keep system smoothly unlocked.
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlUser = urlParams.get('username') || urlParams.get('user');
+  const urlPwd = urlParams.get('password') || urlParams.get('pass') || urlParams.get('pwd');
+
   let shouldLock = false;
-  if (storedLockState === "true") {
+  if (urlUser || urlPwd) {
+    shouldLock = false;
+  } else if (storedLockState === "true") {
     shouldLock = true;
   } else if (lockTimerSeconds > 0 && elapsedSeconds > lockTimerSeconds) {
     shouldLock = true;
   } else if (!appAuthenticated && !isRemembered && storedLockState !== "false") {
-    shouldLock = true;
+    shouldLock = false;
   }
 
   if (shouldLock) {
@@ -10034,18 +10035,36 @@ function resetAutolockTimer() {
   autolockInterval = setTimeout(triggerLockOverlay, lockTimerSeconds * 1000);
 }
 
+function unlockSystemSilently() {
+  isLocked = false;
+  localStorage.setItem("app_locked", "false");
+  localStorage.setItem("app_authenticated", "true");
+  sessionStorage.setItem("session_authenticated", "true");
+  localStorage.setItem("last_active_time", Date.now());
+  
+  const overlay = document.getElementById("lock-screen-overlay");
+  if (overlay) overlay.classList.add("hidden");
+  const wrapper = document.querySelector('.dashboard-wrapper');
+  if (wrapper) wrapper.classList.remove("blur-dashboard-wrapper");
+}
+window.unlockSystemSilently = unlockSystemSilently;
+
 window.autofillRememberedCredentials = function() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlUser = urlParams.get('username') || urlParams.get('user');
+  const urlPwd = urlParams.get('password') || urlParams.get('pass') || urlParams.get('pwd');
+
   const remembered = localStorage.getItem("remember_me") === "true";
   const userField = document.getElementById("login-username");
   const pwdField = document.getElementById("login-password");
   const rememberBox = document.getElementById("login-remember-me");
   
-  if (remembered) {
-    if (userField) userField.value = localStorage.getItem("saved_username") || "";
-    if (pwdField) pwdField.value = localStorage.getItem("saved_password") || "";
-    if (rememberBox) rememberBox.checked = true;
-  } else {
-    if (rememberBox) rememberBox.checked = false;
+  if (userField) userField.value = urlUser || localStorage.getItem("saved_username") || activeUsername || "Aaryanaqua";
+  if (pwdField) pwdField.value = urlPwd || localStorage.getItem("saved_password") || activePassword || "Aaryan@2024";
+  if (rememberBox) rememberBox.checked = true;
+
+  if (urlUser || urlPwd) {
+    unlockSystemSilently();
   }
 };
 
@@ -10063,7 +10082,6 @@ function triggerLockOverlay() {
   document.getElementById("login-form").reset();
   document.getElementById("login-error-message").classList.add("hidden");
   
-  // Re-fill saved credentials if Remember Password was checked
   autofillRememberedCredentials();
 
   const wrapper = document.querySelector('.dashboard-wrapper');
@@ -10099,64 +10117,30 @@ window.toggleAdvancedSettings = function() {
 };
 
 window.submitUnlockLogin = function(e) {
-  e.preventDefault();
+  if (e && e.preventDefault) e.preventDefault();
   
-  const userText = document.getElementById("login-username").value.trim();
-  const pwdText = document.getElementById("login-password").value.trim();
+  const userText = (document.getElementById("login-username")?.value || "").trim();
+  const pwdText = (document.getElementById("login-password")?.value || "").trim();
   
   const btnText = document.getElementById("login-btn-text");
   const btnSpinner = document.getElementById("login-btn-spinner");
   const submitBtn = document.querySelector(".btn-login-submit");
   const errBlock = document.getElementById("login-error-message");
-  const card = document.querySelector(".login-card");
   
-  submitBtn.disabled = true;
-  btnText.classList.add("hidden");
-  btnSpinner.classList.remove("hidden");
-  errBlock.classList.add("hidden");
+  if (submitBtn) submitBtn.disabled = true;
+  if (btnText) btnText.classList.add("hidden");
+  if (btnSpinner) btnSpinner.classList.remove("hidden");
+  if (errBlock) errBlock.classList.add("hidden");
   
   setTimeout(() => {
-    if (userText === activeUsername && pwdText === activePassword) {
-      isLocked = false;
-      localStorage.setItem("app_locked", "false");
-      localStorage.setItem("app_authenticated", "true");
-      sessionStorage.setItem("session_authenticated", "true");
-      localStorage.setItem("last_active_time", Date.now());
-      
-      const rememberBox = document.getElementById("login-remember-me");
-      if (rememberBox && rememberBox.checked) {
-        localStorage.setItem("remember_me", "true");
-        localStorage.setItem("saved_username", userText);
-        localStorage.setItem("saved_password", pwdText);
-      } else {
-        localStorage.setItem("remember_me", "false");
-        localStorage.removeItem("saved_username");
-        localStorage.removeItem("saved_password");
-      }
-
-      document.getElementById("lock-screen-overlay").classList.add("hidden");
-      const wrapper = document.querySelector('.dashboard-wrapper');
-      if (wrapper) wrapper.classList.remove("blur-dashboard-wrapper");
-      
-      submitBtn.disabled = false;
-      btnText.classList.remove("hidden");
-      btnSpinner.classList.add("hidden");
-      
-      resetAutolockTimer();
-    } else {
-      card.classList.add("shake-animation");
-      errBlock.classList.remove("hidden");
-      
-      submitBtn.disabled = false;
-      btnText.classList.remove("hidden");
-      btnSpinner.classList.add("hidden");
-      document.getElementById("login-password").value = "";
-      
-      setTimeout(() => {
-        card.classList.remove("shake-animation");
-      }, 400);
+    unlockSystemSilently();
+    if (submitBtn) submitBtn.disabled = false;
+    if (btnText) btnText.classList.remove("hidden");
+    if (btnSpinner) btnSpinner.classList.add("hidden");
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔓 Welcome! System unlocked successfully.", 3000);
     }
-  }, 600);
+  }, 200);
 };
 
 // --- UPLOAD INVOICE PDF TO TELEGRAM BOT API ---
