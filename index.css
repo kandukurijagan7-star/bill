@@ -777,9 +777,9 @@ body {
 }
 
 .content-header {
-  height: 54px !important;
-  min-height: 54px !important;
-  max-height: 54px !important;
+  height: 56px !important;
+  min-height: 56px !important;
+  max-height: 56px !important;
   background: rgba(255, 255, 255, 0.95) !important;
   backdrop-filter: blur(16px) !important;
   -webkit-backdrop-filter: blur(16px) !important;
@@ -797,30 +797,30 @@ body {
 }
 
 .header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  flex-shrink: 0;
-  height: 100%;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  min-width: 180px !important;
+  flex-shrink: 0 !important;
+  height: 100% !important;
 }
 
 .header-title-wrap {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  height: 100%;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  height: 100% !important;
 }
 
 .breadcrumbs {
-  font-size: 10.5px;
-  font-weight: 600;
-  color: #94a3b8;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  line-height: 1;
-  margin-bottom: 2px;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #94a3b8 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  line-height: 1.2 !important;
+  margin: 0 0 2px 0 !important;
 }
 
 .crumb-root {
@@ -838,13 +838,13 @@ body {
 }
 
 .content-header h2 {
-  font-family: 'Outfit', 'Inter', sans-serif;
+  font-family: 'Outfit', 'Inter', sans-serif !important;
   font-size: 16px !important;
   font-weight: 800 !important;
-  letter-spacing: -0.025em;
-  color: #0f172a;
-  margin: 0;
-  line-height: 1.2;
+  letter-spacing: -0.025em !important;
+  color: #0f172a !important;
+  margin: 0 !important;
+  line-height: 1.2 !important;
 }
 
 /* Pro Top Header Meta Navigation Pills Container */
@@ -872,6 +872,12 @@ body {
   flex-shrink: 0 !important;
   white-space: nowrap !important;
   box-sizing: border-box !important;
+}
+
+@media (max-width: 1200px) {
+  #current-datetime {
+    display: none !important;
+  }
 }
 
 /* Floating Scroll to Top Button */
@@ -920,20 +926,44 @@ body {
 }
 
 .content-view {
-  flex: 1 1 auto;
-  padding: 16px 20px 48px 20px !important;
-  overflow-y: auto !important;
-  overflow-x: hidden;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  height: calc(100vh - 54px);
-  max-height: calc(100vh - 54px);
-  box-sizing: border-box;
-  overscroll-behavior-y: contain;
-  -webkit-overflow-scrolling: touch;
-  scroll-behavior: smooth;
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow-y: scroll !important;
+  overflow-x: hidden !important;
+  display: block !important;
+  padding: 16px 20px 90px 20px !important;
+  box-sizing: border-box !important;
+  overscroll-behavior-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  scroll-behavior: smooth !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #94a3b8 rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Ensure direct children of content-view preserve natural block flow and never shrink */
+.content-view > * {
+  flex-shrink: 0 !important;
+  min-height: min-content !important;
+}
+
+.content-view::-webkit-scrollbar {
+  width: 8px !important;
+}
+
+.content-view::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04) !important;
+  border-radius: 8px !important;
+}
+
+.content-view::-webkit-scrollbar-thumb {
+  background: #94a3b8 !important;
+  border-radius: 8px !important;
+}
+
+.content-view::-webkit-scrollbar-thumb:hover {
+  background: #64748b !important;
 }
 
 .hidden {
@@ -3941,15 +3971,24 @@ body {
   }
 
   .main-content {
+    flex: 1 1 auto;
     height: calc(100vh - 60px);
     min-height: 0;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .content-view {
-    height: calc(100vh - 114px);
-    max-height: calc(100vh - 114px);
-    overflow-y: auto !important;
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow-y: scroll !important;
+    overflow-x: hidden !important;
+    display: block !important;
+    padding-bottom: 90px !important;
   }
 
   .stats-grid {
@@ -4315,8 +4354,9 @@ body {
   border: 1px solid #e2e8f0 !important;
   border-radius: 12px !important;
   box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.05) !important;
-  overflow: hidden !important;
+  overflow: visible !important;
   padding: 0 !important;
+  margin-bottom: 30px !important;
 }
 
 .products-header-bar {
@@ -4481,10 +4521,10 @@ body {
 
 /* 3. Products Table Styling */
 .products-table-responsive {
-  width: 100%;
-  overflow-x: auto;
-  overflow-y: visible;
-  -webkit-overflow-scrolling: touch;
+  width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+  -webkit-overflow-scrolling: touch !important;
 }
 
 .products-table {

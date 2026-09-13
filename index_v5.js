@@ -2401,6 +2401,14 @@ function reconcileProductInventoryStock(oldInvoice, newInvoice) {
       prod.updatedAt = new Date().toISOString();
       modified = true;
 
+      // Stamp optimistic local mutation protection for 60 seconds against stale server overwrites
+      if (!window.recentProductMutations) window.recentProductMutations = {};
+      window.recentProductMutations[prod.id] = Date.now();
+      if (prod.description) {
+        window.recentProductMutations[prod.description] = Date.now();
+        window.recentProductMutations[prod.description.trim().toLowerCase()] = Date.now();
+      }
+
       const actionText = netDelta > 0 
         ? `Invoice Stock Deduction (-${netDelta} ${prod.unit || 'Units'})` 
         : `Invoice Edit Stock Reversal (+${Math.abs(netDelta)} ${prod.unit || 'Units'})`;
@@ -2410,7 +2418,7 @@ function reconcileProductInventoryStock(oldInvoice, newInvoice) {
 
   if (modified) {
     try {
-      // LocalStorage
+      // LocalStorage persistence
       localStorage.setItem("products", JSON.stringify(productsDb));
 
       // IndexedDB persistence
@@ -2418,10 +2426,16 @@ function reconcileProductInventoryStock(oldInvoice, newInvoice) {
       if (window.AaryanDB && typeof window.AaryanDB.saveProducts === "function") {
         try { window.AaryanDB.saveProducts(productsDb); } catch(e){}
       }
+      if (window.AaryanDB && typeof window.AaryanDB.saveAllProducts === "function") {
+        try { window.AaryanDB.saveAllProducts(productsDb); } catch(e){}
+      }
 
-      // Sync to Google Sheets master database
+      // Sync to Google Sheets master database immediately
       if (typeof syncDatabaseToServer === "function") {
         syncDatabaseToServer("products", productsDb);
+      }
+      if (typeof pushDirectToGoogleDatabase === "function") {
+        try { pushDirectToGoogleDatabase("save_products", { products: productsDb }); } catch(e){}
       }
 
       // Broadcast mutation across EMQX MQTT Cloud Mesh
@@ -2430,10 +2444,15 @@ function reconcileProductInventoryStock(oldInvoice, newInvoice) {
       }
 
       // Re-render UI elements immediately across all tabs
-      if (typeof renderProductsTable === "function") renderProductsTable();
+      if (typeof loadProductsDatabaseTable === "function") {
+        loadProductsDatabaseTable();
+      } else if (typeof renderProductsTable === "function") {
+        renderProductsTable(productsDb);
+      }
       if (typeof renderProductsGrid === "function") renderProductsGrid();
       if (typeof populateBillingSelectors === "function") populateBillingSelectors();
       if (typeof updateDashboardStats === "function") updateDashboardStats();
+      if (typeof updateDashboardOverview === "function") updateDashboardOverview();
       if (typeof window.broadcastDatabaseMutation === "function") window.broadcastDatabaseMutation();
     } catch (err) {
       console.warn("Unable to save products db:", err);
@@ -9014,6 +9033,9 @@ function loadProductsDatabaseTable() {
 }
 
 function renderProductsTable(records) {
+  if (!records || !Array.isArray(records)) {
+    records = (Array.isArray(productsDb) && productsDb.length > 0) ? productsDb : [];
+  }
   elements.productsListBody.innerHTML = "";
   if (!records || records.length === 0) {
     if (!window.isInitialSyncDone || isSyncing) {
