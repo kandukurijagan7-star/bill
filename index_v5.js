@@ -746,9 +746,21 @@ try {
   initRealtimeMeshSync();
 } catch (e) {}
 
+function isLocalCompanionAvailable() {
+  if (typeof window === 'undefined') return false;
+  if (window.globalSettings && window.globalSettings.whatsappBotUrl && String(window.globalSettings.whatsappBotUrl).startsWith('http')) {
+    return true;
+  }
+  const hostname = window.location.hostname || '';
+  const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || window.location.protocol === 'file:';
+  const isElectron = typeof navigator !== 'undefined' && /electron/i.test(navigator.userAgent || '');
+  return isLocalHost || isElectron;
+}
+
 // 3. Local Node.js Companion SSE Sync Stream (< 2ms local network)
 let localCompanionSource = null;
 function initLocalCompanionSync() {
+  if (!isLocalCompanionAvailable()) return;
   try {
     const endpoint = typeof getWhatsAppApiEndpoint === 'function'
       ? getWhatsAppApiEndpoint('/api/sync/events')
@@ -799,16 +811,18 @@ function broadcastInterTabEvent(type, payload = {}) {
   }
 
   // 3. Local Node.js Companion (< 2ms LAN push)
-  try {
-    const endpoint = typeof getWhatsAppApiEndpoint === 'function'
-      ? getWhatsAppApiEndpoint('/api/sync/push')
-      : 'http://localhost:3001/api/sync/push';
-    fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: type, type, payload: fullMsg, senderId: MY_SYNC_CLIENT_ID })
-    }).catch(() => {});
-  } catch (e) {}
+  if (isLocalCompanionAvailable()) {
+    try {
+      const endpoint = typeof getWhatsAppApiEndpoint === 'function'
+        ? getWhatsAppApiEndpoint('/api/sync/push')
+        : 'http://localhost:3001/api/sync/push';
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: type, type, payload: fullMsg, senderId: MY_SYNC_CLIENT_ID })
+      }).catch(() => {});
+    } catch (e) {}
+  }
 }
 
 window.broadcastDatabaseMutation = function(extra = {}) {
@@ -6809,14 +6823,14 @@ let whatsappEventSource = null;
 let whatsappAdaptiveTimer = null;
 
 function initWhatsAppEventSource() {
-  if (typeof EventSource === "undefined") {
+  if (typeof EventSource === "undefined" || !isLocalCompanionAvailable()) {
     setupAdaptiveWhatsAppPolling();
     return;
   }
 
   try {
     if (whatsappEventSource) {
-      whatsappEventSource.close();
+      try { whatsappEventSource.close(); } catch (e) {}
       whatsappEventSource = null;
     }
 
@@ -6847,12 +6861,21 @@ function initWhatsAppEventSource() {
 }
 
 function getWhatsAppApiEndpoint(path) {
+  if (window.globalSettings && window.globalSettings.whatsappBotUrl && String(window.globalSettings.whatsappBotUrl).startsWith('http')) {
+    const base = window.globalSettings.whatsappBotUrl.replace(/\/+$/, '');
+    return base + path;
+  }
   if (window.location.port === '3001') return path;
   return 'http://localhost:3001' + path;
 }
 
 function setupAdaptiveWhatsAppPolling() {
   if (whatsappAdaptiveTimer) clearTimeout(whatsappAdaptiveTimer);
+
+  if (!isLocalCompanionAvailable()) {
+    fetchWhatsAppBotStatus();
+    return;
+  }
 
   const poll = async () => {
     await fetchWhatsAppBotStatus();
@@ -6869,6 +6892,21 @@ function setupAdaptiveWhatsAppPolling() {
 }
 
 async function fetchWhatsAppBotStatus() {
+  if (!isLocalCompanionAvailable()) {
+    // When on public web (GitHub Pages, Netlify), query bot status via MQTT mesh instead of blocked loopback HTTP
+    if (realtimeMeshClient && realtimeMeshClient.connected && (!whatsappBotStatus || whatsappBotStatus.status !== 'CONNECTED')) {
+      try {
+        realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({ command: 'get_status' }));
+      } catch (me) {}
+    }
+    if (!whatsappBotStatus || !whatsappBotStatus.status || whatsappBotStatus.status === 'DISCONNECTED') {
+      whatsappBotStatus = whatsappBotStatus || { status: 'DISCONNECTED', isReady: false, webDirect: true };
+      updateWhatsAppBotPillUI(whatsappBotStatus);
+      updateWhatsAppBotModalUI(whatsappBotStatus);
+    }
+    return;
+  }
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2500);
@@ -7265,6 +7303,16 @@ window.loadWhatsAppActivityLogs = async function() {
         <button type="button" class="btn btn-sm btn-primary" onclick="promptWhatsAppSecurity(loadWhatsAppActivityLogs)" style="background: #075e54; border-color: #075e54; font-weight: 600; padding: 6px 14px;">
           <i class="fa-solid fa-unlock"></i> Unlock Activity History
         </button>
+      </div>
+    `;
+    return;
+  }
+
+  if (!isLocalCompanionAvailable()) {
+    container.innerHTML = `
+      <div style="text-align: center; color: #64748b; padding: 24px 12px; font-size: 12px;">
+        <i class="fa-solid fa-cloud" style="font-size: 24px; color: #0284c7; margin-bottom: 8px; display: block;"></i>
+        Operating in Cloud Web Mode.<br>Invoices & reminders are dispatched directly via WhatsApp Web & Mobile.
       </div>
     `;
     return;
@@ -8530,7 +8578,7 @@ window.sendWhatsAppPaymentReminder = async function(id, btnEl = null) {
 
   // Check live bot status
   let isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED');
-  if (!isBotReady) {
+  if (!isBotReady && isLocalCompanionAvailable()) {
     try {
       const controller = new AbortController();
       const tId = setTimeout(() => controller.abort(), 2000);
@@ -9991,7 +10039,7 @@ window.sendPartyPaymentReminderWhatsApp = async function(partyName, phone) {
 
   // Live bot status check
   let isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED');
-  if (!isBotReady) {
+  if (!isBotReady && isLocalCompanionAvailable()) {
     try {
       const controller = new AbortController();
       const tId = setTimeout(() => controller.abort(), 2000);
