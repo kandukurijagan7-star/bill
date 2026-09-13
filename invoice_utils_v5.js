@@ -79,6 +79,73 @@
     };
   }
 
+  function getInvoicePaidAndBalance(inv) {
+    if (!inv) return { status: 'Paid', isPaid: true, paid: 0, balance: 0, total: 0 };
+    const details = inv.details || {};
+    const total = parseFloat(inv.total !== undefined ? inv.total : (details.total || 0)) || 0;
+    const status = String(details.paymentStatus || inv.paymentStatus || 'Paid').trim();
+    const isPaid = status.toLowerCase() === 'paid';
+    const isUnpaid = status.toLowerCase() === 'unpaid';
+
+    if (isPaid) {
+      return {
+        status: 'Paid',
+        isPaid: true,
+        paid: total,
+        balance: 0,
+        total
+      };
+    }
+
+    if (isUnpaid) {
+      return {
+        status: 'Unpaid',
+        isPaid: false,
+        paid: 0,
+        balance: total,
+        total
+      };
+    }
+
+    // Partial or other status
+    let balance = 0;
+    let paid = 0;
+    if (details.balanceDue !== undefined && !isNaN(parseFloat(details.balanceDue))) {
+      balance = Math.max(0, parseFloat(details.balanceDue));
+      paid = Math.max(0, roundToTwo(total - balance));
+    } else if (inv.balanceDue !== undefined && !isNaN(parseFloat(inv.balanceDue))) {
+      balance = Math.max(0, parseFloat(inv.balanceDue));
+      paid = Math.max(0, roundToTwo(total - balance));
+    } else if (details.paidAmount !== undefined && !isNaN(parseFloat(details.paidAmount))) {
+      paid = Math.max(0, parseFloat(details.paidAmount));
+      balance = Math.max(0, roundToTwo(total - paid));
+    } else if (inv.paidAmount !== undefined && !isNaN(parseFloat(inv.paidAmount))) {
+      paid = Math.max(0, parseFloat(inv.paidAmount));
+      balance = Math.max(0, roundToTwo(total - paid));
+    } else {
+      balance = total;
+      paid = 0;
+    }
+
+    if (balance <= 0) {
+      return {
+        status: 'Paid',
+        isPaid: true,
+        paid: total,
+        balance: 0,
+        total
+      };
+    }
+
+    return {
+      status,
+      isPaid: false,
+      paid,
+      balance,
+      total
+    };
+  }
+
   function getNextInvoiceNumber(existingInvoices = [], options = {}) {
     const { fillGaps = true, preferInvoiceNo = null } = (typeof options === 'object' && options !== null) ? options : {};
     
@@ -156,6 +223,7 @@
     roundToTwo,
     calculateInvoiceBreakdown,
     calculatePaymentSummary,
+    getInvoicePaidAndBalance,
     getNextInvoiceNumber
   };
 })(typeof window !== 'undefined' ? window : globalThis);

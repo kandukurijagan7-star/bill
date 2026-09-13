@@ -5479,8 +5479,25 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
     currentInvoice.cgst = totalCgst;
     currentInvoice.sgst = totalSgst;
     currentInvoice.igst = totalIgst;
-    currentInvoice.roundOff = roundOff;
     currentInvoice.total = grandTotal;
+
+    const resolvedPStatus = (elements.billPaymentStatus?.value || currentInvoice.paymentStatus || "Paid").trim();
+    currentInvoice.paymentStatus = resolvedPStatus;
+    if (resolvedPStatus === "Paid") {
+      currentInvoice.paidAmount = grandTotal;
+      currentInvoice.balancePaid = 0;
+      currentInvoice.balanceDue = 0;
+    } else if (resolvedPStatus === "Unpaid") {
+      currentInvoice.paidAmount = 0;
+      currentInvoice.balancePaid = 0;
+      currentInvoice.balanceDue = grandTotal;
+    } else if (resolvedPStatus === "Partial") {
+      const pAmt = parseFloat(elements.billPaidAmount?.value !== undefined && elements.billPaidAmount?.value !== "" ? elements.billPaidAmount.value : currentInvoice.paidAmount) || 0;
+      const bPaid = parseFloat(elements.billBalancePaid?.value !== undefined && elements.billBalancePaid?.value !== "" ? elements.billBalancePaid.value : currentInvoice.balancePaid) || 0;
+      currentInvoice.paidAmount = pAmt;
+      currentInvoice.balancePaid = bPaid;
+      currentInvoice.balanceDue = Math.max(0, InvoiceUtils.roundToTwo(grandTotal - (pAmt + bPaid)));
+    }
 
     // Auto-resolve invoice number collision on new invoices
     if (!currentInvoice.isEditing && invoicesDb.some(inv => inv && inv.invoiceNo === currentInvoice.invoiceNo)) {
@@ -6573,10 +6590,11 @@ function generateWhatsAppInvoiceMessage(details) {
   const companyPhone = company.phone || '7386262139';
   const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
 
-  const total = parseFloat(details.total || 0);
-  const status = details.paymentStatus || 'Paid';
-  const paid = parseFloat(details.paidAmount !== undefined ? details.paidAmount : (status === 'Paid' ? total : 0));
-  const balance = Math.max(0, total - paid);
+  const payInfo = getInvoicePaidAndBalance({ details, total: details.total, paymentStatus: details.paymentStatus });
+  const total = payInfo.total;
+  const status = payInfo.status;
+  const paid = payInfo.paid;
+  const balance = payInfo.balance;
 
   let msg = `🏛️ *${companyName}*\n`;
   msg += `-----------------------------------\n`;
@@ -7797,10 +7815,11 @@ window.saveWhatsAppSettings = function() {
 
 // --- FORMAT WHATSAPP INVOICE SUMMARY ---
 function formatInvoiceWhatsAppSummary(details) {
-  const total = parseFloat(details.total || 0);
-  const status = details.paymentStatus || 'Paid';
-  const paid = parseFloat(details.paidAmount !== undefined ? details.paidAmount : (status === 'Paid' ? total : 0));
-  const balance = Math.max(0, total - paid);
+  const payInfo = getInvoicePaidAndBalance({ details, total: details.total, paymentStatus: details.paymentStatus });
+  const total = payInfo.total;
+  const status = payInfo.status;
+  const paid = payInfo.paid;
+  const balance = payInfo.balance;
   const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
 
   let text = `🏛️ *${globalSettings.company?.name || 'AARYAN AQUA NEEDS'}*\n`;
@@ -8283,9 +8302,10 @@ window.openBalanceQrModal = function(id) {
   }
   if (!inv) return;
   const details = inv.details || {};
-  const total = parseFloat(inv.total || 0);
-  const paid = parseFloat(details.paidAmount !== undefined ? details.paidAmount : (details.paymentStatus === 'Paid' ? total : 0));
-  const balance = Math.max(0, total - paid);
+  const payInfo = getInvoicePaidAndBalance(inv);
+  const total = payInfo.total;
+  const paid = payInfo.paid;
+  const balance = payInfo.balance;
 
   currentBalanceQrInv = { inv, details, total, paid, balance };
 
@@ -8436,15 +8456,17 @@ window.markBalanceQrPaidAndSendWhatsApp = function() {
 window.sendWhatsAppPaymentReminder = async function(id, btnEl = null) {
   const inv = invoicesDb.find(i => i.id === id);
   if (!inv) return;
-  const details = inv.details || {};
-  const total = parseFloat(inv.total || 0);
-  const paid = parseFloat(details.paidAmount !== undefined ? details.paidAmount : (details.paymentStatus === 'Paid' ? total : 0));
-  const balance = Math.max(0, total - paid);
+  const payInfo = getInvoicePaidAndBalance(inv);
 
-  if (balance <= 0 && details.paymentStatus === 'Paid') {
+  if (payInfo.isPaid || payInfo.balance <= 0) {
     showFloatingToast(`Invoice #${inv.invoiceNo} is already fully paid! No balance reminder needed.`, "info");
     return;
   }
+
+  const details = inv.details || {};
+  const total = payInfo.total;
+  const paid = payInfo.paid;
+  const balance = payInfo.balance;
 
   let rawPhone = getCustomerPhoneNumber(details);
   let cleanPhone = "";
@@ -8671,7 +8693,10 @@ window.filterInvoicesByStatus = async function() {
   }
 
   if (statusFilter !== "all") {
-    filtered = filtered.filter(inv => (inv.details?.paymentStatus || "Paid") === statusFilter);
+    filtered = filtered.filter(inv => {
+      const payInfo = getInvoicePaidAndBalance(inv);
+      return payInfo.status === statusFilter;
+    });
   }
 
   renderHistoryTableRows(filtered);
@@ -8726,6 +8751,30 @@ function loadInvoicesHistoryTable() {
   }
 }
 
+function getInvoicePaidAndBalance(inv) {
+  if (window.InvoiceUtils && typeof window.InvoiceUtils.getInvoicePaidAndBalance === 'function') {
+    return window.InvoiceUtils.getInvoicePaidAndBalance(inv);
+  }
+  if (!inv) return { status: 'Paid', isPaid: true, paid: 0, balance: 0, total: 0 };
+  const details = inv.details || {};
+  const total = parseFloat(inv.total !== undefined ? inv.total : (details.total || 0)) || 0;
+  const status = String(details.paymentStatus || inv.paymentStatus || 'Paid').trim();
+  const isPaid = status.toLowerCase() === 'paid';
+  if (isPaid) return { status: 'Paid', isPaid: true, paid: total, balance: 0, total };
+  if (status.toLowerCase() === 'unpaid') return { status: 'Unpaid', isPaid: false, paid: 0, balance: total, total };
+  let balance = 0;
+  if (details.balanceDue !== undefined && !isNaN(parseFloat(details.balanceDue))) {
+    balance = Math.max(0, parseFloat(details.balanceDue));
+  } else if (inv.balanceDue !== undefined && !isNaN(parseFloat(inv.balanceDue))) {
+    balance = Math.max(0, parseFloat(inv.balanceDue));
+  } else {
+    const p = parseFloat(details.paidAmount ?? inv.paidAmount ?? 0) || 0;
+    balance = Math.max(0, total - p);
+  }
+  if (balance <= 0) return { status: 'Paid', isPaid: true, paid: total, balance: 0, total };
+  return { status, isPaid: false, paid: Math.max(0, total - balance), balance, total };
+}
+
 function renderHistoryTableRows(records) {
   if (!elements.historyInvoicesBody) return;
   elements.historyInvoicesBody.innerHTML = "";
@@ -8759,17 +8808,17 @@ function renderHistoryTableRows(records) {
   records.slice().reverse().forEach(inv => {
     const details = inv.details || {};
     const isEstimate = Boolean(inv.isEstimate || details.isEstimate || String(inv.invoiceNo || "").startsWith("EST-"));
-    const status = details.paymentStatus || 'Paid';
+    const payInfo = getInvoicePaidAndBalance(inv);
+    const status = payInfo.status;
+    const isPaid = payInfo.isPaid;
+    const balance = payInfo.balance;
+
     let badgeClass = 'badge-paid';
     if (status === 'Partial') badgeClass = 'badge-partial';
     if (status === 'Unpaid') badgeClass = 'badge-unpaid';
 
-    const total = parseFloat(inv.total || 0);
-    const paid = parseFloat(details.paidAmount !== undefined ? details.paidAmount : (status === 'Paid' ? total : 0));
-    const balance = Math.max(0, total - paid);
-
     let balanceQrBtn = "";
-    if (!isEstimate && (balance > 0 || status === 'Partial' || status === 'Unpaid')) {
+    if (!isEstimate && !isPaid && balance > 0) {
       balanceQrBtn = `
         <button class="action-btn share" onclick="openBalanceQrModal('${inv.id}')" title="View Balance UPI QR Code (₹ ${formatCurrency(balance)})" style="background: rgba(6, 182, 212, 0.15); color: #06b6d4;"><i class="fa-solid fa-qrcode"></i></button>
         <button class="action-btn share" onclick="sendWhatsAppPaymentReminder('${inv.id}', this)" title="Send 1-Click WhatsApp Payment Reminder (₹ ${formatCurrency(balance)})" style="background: rgba(245, 158, 11, 0.15); color: #d97706;"><i class="fa-solid fa-bell"></i></button>
@@ -9908,9 +9957,9 @@ window.sendPartyPaymentReminderWhatsApp = async function(partyName, phone) {
   const customerInvoices = invoicesDb.filter(inv => inv.customerName === partyName || (inv.details?.buyer?.name) === partyName);
   let totalBilled = 0, totalPaid = 0;
   customerInvoices.forEach(inv => {
-    totalBilled += parseFloat(inv.total || 0);
-    const details = inv.details || {};
-    totalPaid += parseFloat(details.paidAmount !== undefined ? details.paidAmount : (details.paymentStatus === 'Paid' ? inv.total : 0));
+    const payInfo = getInvoicePaidAndBalance(inv);
+    totalBilled += payInfo.total;
+    totalPaid += payInfo.paid;
   });
   const pendingDues = Math.max(0, totalBilled - totalPaid);
 
@@ -9985,9 +10034,9 @@ function createPartyListCard(p) {
   const customerInvoices = invoicesDb.filter(inv => inv.customerName === p.name || (inv.details?.buyer?.name) === p.name);
   let totalBilled = 0, totalPaid = 0;
   customerInvoices.forEach(inv => {
-    totalBilled += parseFloat(inv.total || 0);
-    const details = inv.details || {};
-    totalPaid += parseFloat(details.paidAmount !== undefined ? details.paidAmount : (details.paymentStatus === 'Paid' ? inv.total : 0));
+    const payInfo = getInvoicePaidAndBalance(inv);
+    totalBilled += payInfo.total;
+    totalPaid += payInfo.paid;
   });
   const pendingDues = Math.max(0, totalBilled - totalPaid);
 
@@ -12901,9 +12950,10 @@ window.openInvoiceVerificationModal = function(invoiceNo) {
   const invDate = invDetails.invoiceDate || inv.date || inv.createdAt;
   const custName = inv.buyerName || invDetails.buyer?.name || inv.customerName || "Customer";
   const custPhone = invDetails.buyer?.phone || inv.phone || inv.customerPhone || "N/A";
-  const totalAmt = Number(inv.total || invDetails.total || 0);
-  const paidAmt = Number(inv.paidAmount !== undefined ? inv.paidAmount : (inv.status === 'Paid' ? totalAmt : 0));
-  const balDue = Number(inv.balanceDue !== undefined ? inv.balanceDue : Math.max(0, totalAmt - paidAmt));
+  const payInfo = getInvoicePaidAndBalance(inv);
+  const totalAmt = payInfo.total;
+  const paidAmt = payInfo.paid;
+  const balDue = payInfo.balance;
 
   document.getElementById("verify-inv-no").textContent = invNo;
   document.getElementById("verify-inv-date").textContent = (typeof formatInputDateString === "function") ? formatInputDateString(invDate) : (invDate || 'N/A');
