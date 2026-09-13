@@ -259,6 +259,9 @@
             <button class="btn btn-cyan btn-hero" onclick="switchTab('billing')">
               <i class="fa-solid fa-plus"></i> New GST Bill
             </button>
+            <button class="btn btn-secondary btn-hero" onclick="openBarcodeScannerModal()" title="Scan Bill QR or Barcode to Settle Payment">
+              <i class="fa-solid fa-qrcode"></i> Scan Bill / Pay
+            </button>
             <button class="btn btn-secondary btn-hero" onclick="switchTab('products')">
               <i class="fa-solid fa-cubes"></i> Add Product
             </button>
@@ -289,6 +292,28 @@
               <span class="stat-label">TOTAL BILLING VOLUME</span>
               <h3 id="stat-total-amount">₹ 85,725.00</h3>
               <span class="stat-trend text-green"><i class="fa-solid fa-circle-check"></i> Gross Sales</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-icon bg-emerald-light" style="background: rgba(16, 185, 129, 0.12);">
+              <i class="fa-solid fa-hand-holding-dollar" style="color: #059669;"></i>
+            </div>
+            <div class="stat-details">
+              <span class="stat-label">PAYMENTS RECEIVED</span>
+              <h3 id="stat-total-collected">₹ 0.00</h3>
+              <span class="stat-trend text-green" id="stat-collected-trend"><i class="fa-solid fa-circle-check"></i> <span id="stat-collected-status">All Settled</span></span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-icon bg-amber-light" style="background: rgba(245, 158, 11, 0.12);">
+              <i class="fa-solid fa-hourglass-half" style="color: #d97706;"></i>
+            </div>
+            <div class="stat-details">
+              <span class="stat-label">OUTSTANDING BALANCE</span>
+              <h3 id="stat-total-balance" style="color: #b45309;">₹ 0.00</h3>
+              <span class="stat-trend text-amber" id="stat-balance-trend"><i class="fa-solid fa-clock"></i> <span id="stat-balance-pending-count">0 Bills Pending</span></span>
             </div>
           </div>
 
@@ -2693,12 +2718,30 @@
             </div>
 
             <!-- Done Payment Form -->
-            <div style="background: #ffffff; border: 1px solid #fed7aa; border-radius: 10px; padding: 12px;">
-              <div style="font-size: 12px; font-weight: 700; color: #0f172a; margin-bottom: 8px;">Record / Done Payment</div>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <div style="background: #ffffff; border: 1px solid #fed7aa; border-radius: 10px; padding: 14px;">
+              <div style="font-size: 12.5px; font-weight: 700; color: #0f172a; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+                <span><i class="fa-solid fa-receipt text-green"></i> Record / Settle Payment</span>
+                <span class="badge-status badge-partial" style="font-size: 10.5px;">Pending Settle</span>
+              </div>
+
+              <!-- Payment Status Selector -->
+              <div style="margin-bottom: 10px;">
+                <label style="font-size: 11px; color: #475569; font-weight: 700; display: block; margin-bottom: 3px;">Payment Status</label>
+                <select id="verify-pay-status-select" class="form-control" onchange="toggleVerifyCustomAmount(this.value)" style="font-size: 12.5px; padding: 7px 10px; font-weight: 700; color: #15803d; border: 1.5px solid #86efac; background: #f0fdf4; border-radius: 8px;">
+                  <option value="Paid" selected>✅ Paid (Full Settlement of Balance)</option>
+                  <option value="Partial">⏳ Partial Payment (Custom Amount)</option>
+                </select>
+              </div>
+
+              <div id="verify-custom-amount-wrap" style="display: none; margin-bottom: 10px;">
+                <label style="font-size: 11px; color: #475569; font-weight: 700; display: block; margin-bottom: 3px;">Amount Paying Now (₹)</label>
+                <input type="number" id="verify-pay-amount-input" class="form-control" placeholder="Enter amount received" min="1" step="any" style="font-size: 13px; padding: 7px 10px; font-weight: 700; color: #0f172a; border-radius: 8px;">
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
                 <div>
                   <label style="font-size: 10.5px; color: #64748b; font-weight: 600; display: block; margin-bottom: 2px;">Payment Mode</label>
-                  <select id="verify-pay-mode-select" class="form-control" style="font-size: 12px; padding: 6px 8px;">
+                  <select id="verify-pay-mode-select" class="form-control" style="font-size: 12px; padding: 6px 8px; border-radius: 6px;">
                     <option value="UPI / Online">UPI / Online</option>
                     <option value="Cash">Cash</option>
                     <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
@@ -2707,11 +2750,11 @@
                 </div>
                 <div>
                   <label style="font-size: 10.5px; color: #64748b; font-weight: 600; display: block; margin-bottom: 2px;">Ref / UTR No. (Optional)</label>
-                  <input type="text" id="verify-pay-ref-input" class="form-control" placeholder="e.g. UTR1293847" style="font-size: 12px; padding: 6px 8px;">
+                  <input type="text" id="verify-pay-ref-input" class="form-control" placeholder="e.g. UTR1293847" style="font-size: 12px; padding: 6px 8px; border-radius: 6px;">
                 </div>
               </div>
-              <button type="button" id="verify-done-pay-btn" onclick="submitInvoicePaymentSettlement()" class="btn btn-success" style="width: 100%; padding: 10px; font-weight: 700; font-size: 13.5px; background: linear-gradient(135deg, #16a34a, #15803d); border: none; border-radius: 8px; box-shadow: 0 4px 10px rgba(22, 163, 74, 0.3); color: white; cursor: pointer;">
-                <i class="fa-solid fa-circle-check"></i> Done Payment & Settle Balance
+              <button type="button" id="verify-done-pay-btn" onclick="submitInvoicePaymentSettlement()" class="btn btn-success" style="width: 100%; padding: 11px; font-weight: 700; font-size: 13.5px; background: linear-gradient(135deg, #16a34a, #15803d); border: none; border-radius: 8px; box-shadow: 0 4px 10px rgba(22, 163, 74, 0.3); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <i class="fa-solid fa-circle-check"></i> Settle Balance &amp; Update Dashboard
               </button>
             </div>
           </div>
@@ -3813,7 +3856,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=340_live_pna_cors_fix"></script>
+  <script src="index_v5.js?v=341_live_dashboard_balance_settle"></script>
 </body>
 </html>
 

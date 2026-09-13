@@ -2407,6 +2407,10 @@ function loadAllDatabases() {
     if (!globalSettings) globalSettings = {};
   }
 
+  window.invoicesDb = invoicesDb;
+  window.productsDb = productsDb;
+  window.partiesDb = partiesDb;
+
   // Seed default product catalog if empty so billing is never blocked
   if (!productsDb || productsDb.length === 0) {
     productsDb = [
@@ -3201,16 +3205,59 @@ function updateDashboardOverview() {
   if (isSyncLoading) {
     if (elements.statTotalInvoices) elements.statTotalInvoices.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 16px;"></i>`;
     if (elements.statTotalAmount) elements.statTotalAmount.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 16px;"></i>`;
+    const sc = document.getElementById("stat-total-collected");
+    if (sc) sc.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 16px;"></i>`;
+    const sb = document.getElementById("stat-total-balance");
+    if (sb) sb.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 16px;"></i>`;
   } else {
     if (elements.statTotalInvoices) elements.statTotalInvoices.textContent = invoicesDb.length;
-    const totalRevenue = invoicesDb.reduce((sum, inv) => {
-      if (!inv) return sum;
-      const raw = inv.total !== undefined ? inv.total : (inv.details && inv.details.total !== undefined ? inv.details.total : 0);
-      return sum + safeParseAmount(raw);
-    }, 0);
+    let totalRevenue = 0;
+    let totalCollected = 0;
+    let totalBalanceDue = 0;
+    let pendingInvoicesCount = 0;
+
+    (invoicesDb || []).forEach(inv => {
+      if (!inv) return;
+      const isEst = Boolean(inv.isEstimate || inv.details?.isEstimate || String(inv.invoiceNo || "").startsWith("EST-"));
+      if (isEst) return;
+      const payInfo = typeof getInvoicePaidAndBalance === "function" 
+        ? getInvoicePaidAndBalance(inv)
+        : { status: 'Paid', isPaid: true, paid: safeParseAmount(inv.total), balance: 0, total: safeParseAmount(inv.total) };
+      
+      totalRevenue += payInfo.total;
+      totalCollected += payInfo.paid;
+      totalBalanceDue += payInfo.balance;
+      if (!payInfo.isPaid && payInfo.balance > 0.01) {
+        pendingInvoicesCount++;
+      }
+    });
+
     if (elements.statTotalAmount) {
       elements.statTotalAmount.textContent = '₹ ' + formatCurrency(totalRevenue);
       elements.statTotalAmount.title = 'Total Gross Billing Volume: ₹ ' + formatCurrency(totalRevenue);
+    }
+
+    const statCollectedEl = document.getElementById("stat-total-collected");
+    const statCollectedStatusEl = document.getElementById("stat-collected-status");
+    if (statCollectedEl) {
+      statCollectedEl.textContent = '₹ ' + formatCurrency(totalCollected);
+      statCollectedEl.title = 'Total Settled & Received Payments: ₹ ' + formatCurrency(totalCollected);
+    }
+    if (statCollectedStatusEl) {
+      statCollectedStatusEl.textContent = totalBalanceDue <= 0.01 ? "All Settled ✅" : `${Math.round((totalCollected / (totalRevenue || 1)) * 100)}% Settled`;
+    }
+
+    const statBalanceEl = document.getElementById("stat-total-balance");
+    const statPendingCountEl = document.getElementById("stat-balance-pending-count");
+    if (statBalanceEl) {
+      statBalanceEl.textContent = '₹ ' + formatCurrency(totalBalanceDue);
+      statBalanceEl.title = 'Total Outstanding / Unpaid Balance: ₹ ' + formatCurrency(totalBalanceDue);
+      statBalanceEl.style.color = totalBalanceDue > 0.01 ? "#b45309" : "#10b981";
+    }
+    if (statPendingCountEl) {
+      statPendingCountEl.textContent = pendingInvoicesCount > 0 
+        ? `${pendingInvoicesCount} Bill${pendingInvoicesCount > 1 ? 's' : ''} Pending`
+        : "All Cleared ✅";
     }
 
     // Advanced Gross Profit & Margin Analytics Calculation
@@ -3269,10 +3316,24 @@ function updateDashboardOverview() {
 
     recent.forEach(inv => {
       const details = inv.details || {};
-      const status = details.paymentStatus || inv.paymentStatus || 'Paid';
+      const isEstimate = Boolean(inv.isEstimate || details.isEstimate || String(inv.invoiceNo || "").startsWith("EST-"));
+      const payInfo = typeof getInvoicePaidAndBalance === "function" 
+        ? getInvoicePaidAndBalance(inv) 
+        : { status: 'Paid', isPaid: true, paid: safeParseAmount(inv.total), balance: 0, total: safeParseAmount(inv.total) };
+      const status = payInfo.status;
+      const isPaid = payInfo.isPaid;
+      const balance = payInfo.balance;
+
       let badgeClass = 'badge-paid';
       if (status === 'Partial') badgeClass = 'badge-partial';
       if (status === 'Unpaid') badgeClass = 'badge-unpaid';
+
+      let balanceQrBtn = "";
+      if (!isEstimate && !isPaid && balance > 0) {
+        balanceQrBtn = `
+          <button class="action-btn share" onclick="openBalanceQrModal('${inv.id}')" title="Scan & Settle Balance (₹ ${formatCurrency(balance)})" style="background: rgba(6, 182, 212, 0.15); color: #06b6d4;"><i class="fa-solid fa-qrcode"></i></button>
+        `;
+      }
 
       const invTotal = safeParseAmount(inv.total !== undefined ? inv.total : details.total);
       const custName = (inv.customerName || (details.buyer && details.buyer.name) || 'Cash Customer').trim();
@@ -3285,8 +3346,12 @@ function updateDashboardOverview() {
         <td style="font-weight: 600; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${custName}">${custName}</td>
         <td class="text-center" style="white-space: nowrap;">${itemsCount}</td>
         <td style="text-align: right; font-weight: 700; white-space: nowrap;">₹ ${formatCurrency(invTotal)}</td>
-        <td class="text-center" style="white-space: nowrap;"><span class="badge-status ${badgeClass}">${status}</span></td>
+        <td class="text-center" style="white-space: nowrap;">
+          <span class="badge-status ${badgeClass}">${status}</span>
+          ${(!isPaid && balance > 0) ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : ''}
+        </td>
         <td class="actions-cell">
+          ${balanceQrBtn}
           <button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Invoice"><i class="fa-solid fa-pen-to-square"></i></button>
           <button class="action-btn print" onclick="printSavedInvoice('${inv.id}')" title="Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
           <button class="action-btn print" onclick="printSavedInvoiceThermal('${inv.id}')" title="Print Thermal POS Receipt"><i class="fa-solid fa-receipt"></i></button>
@@ -8456,8 +8521,12 @@ window.markBalanceQrPaidAndSendWhatsApp = function() {
   });
 
   // Persist & Sync to LocalStorage, IndexedDB, Google Sheets & EMQX Mesh
-  if (typeof saveToLocalStorage === "function") saveToLocalStorage();
-  if (typeof saveInvoicesToDB === "function") saveInvoicesToDB();
+  try {
+    localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+    window.invoicesDb = invoicesDb;
+  } catch (e) {
+    console.warn("Error persisting invoices to localStorage:", e);
+  }
   if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
     try { window.AaryanDB.saveInvoice(inv); } catch (e) {}
   }
@@ -8466,7 +8535,7 @@ window.markBalanceQrPaidAndSendWhatsApp = function() {
   }
   if (typeof renderInvoicesTable === "function") renderInvoicesTable();
   if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
-  if (typeof updateDashboardStats === "function") updateDashboardStats();
+  if (typeof updateDashboardOverview === "function") updateDashboardOverview();
   if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
 
   // Mesh MQTT Sync
@@ -13050,6 +13119,17 @@ window.openInvoiceVerificationModal = function(invoiceNo) {
     const payDisplay = document.getElementById("verify-pay-amount-display");
     if (payDisplay) payDisplay.textContent = formatCurrency(balDue);
 
+    const payStatusSelect = document.getElementById("verify-pay-status-select");
+    if (payStatusSelect) payStatusSelect.value = "Paid";
+    const customAmtWrap = document.getElementById("verify-custom-amount-wrap");
+    if (customAmtWrap) customAmtWrap.style.display = "none";
+    const customAmtInput = document.getElementById("verify-pay-amount-input");
+    if (customAmtInput) customAmtInput.value = balDue.toFixed(2);
+    const doneBtn = document.getElementById("verify-done-pay-btn");
+    if (doneBtn) {
+      doneBtn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Balance (₹ ${formatCurrency(balDue)}) & Update Dashboard`;
+    }
+
     // Setup UPI Payment Links
     const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
     const cName = (globalSettings.company?.name || "Aaryan Aqua Needs").replace(/[^a-zA-Z0-9 ]/g, '').trim();
@@ -13102,6 +13182,36 @@ window.openInvoiceVerificationModal = function(invoiceNo) {
   modal.classList.remove("hidden");
 };
 
+window.toggleVerifyCustomAmount = function(status) {
+  const wrap = document.getElementById("verify-custom-amount-wrap");
+  const btn = document.getElementById("verify-done-pay-btn");
+  const input = document.getElementById("verify-pay-amount-input");
+  
+  let curBal = 0;
+  if (window.currentVerifiedInvoiceNo) {
+    const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
+      String(i.invoiceNo || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase() ||
+      String(i.id || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase()
+    );
+    if (inv) {
+      const payInfo = typeof getInvoicePaidAndBalance === "function" ? getInvoicePaidAndBalance(inv) : { balance: inv.balanceDue || 0 };
+      curBal = payInfo.balance;
+    }
+  }
+
+  if (status === "Partial") {
+    if (wrap) wrap.style.display = "block";
+    if (input && (!input.value || parseFloat(input.value) <= 0)) {
+      input.value = curBal > 0 ? (curBal / 2).toFixed(2) : "0";
+    }
+    if (btn) btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Record Partial Payment & Update Dashboard';
+  } else {
+    if (wrap) wrap.style.display = "none";
+    if (input) input.value = curBal.toFixed(2);
+    if (btn) btn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Full Balance (₹ ${formatCurrency(curBal)}) & Update Dashboard`;
+  }
+};
+
 window.closeInvoiceVerificationModal = function() {
   const modal = document.getElementById("invoice-verification-modal");
   if (modal) modal.classList.add("hidden");
@@ -13135,25 +13245,57 @@ window.submitInvoicePaymentSettlement = function() {
   );
 
   if (!inv) {
-    if (typeof showNotification === "function") showNotification("Error: Invoice record not found.", "error");
+    if (typeof showFloatingToast === "function") showFloatingToast("❌ Error: Invoice record not found.", "warning");
     return;
   }
 
+  const payInfo = typeof getInvoicePaidAndBalance === "function" 
+    ? getInvoicePaidAndBalance(inv) 
+    : { total: parseFloat(inv.total) || 0, paid: parseFloat(inv.paidAmount) || 0, balance: parseFloat(inv.balanceDue) || 0 };
+  const totalAmt = payInfo.total;
+  const curPaid = payInfo.paid;
+  const curBal = payInfo.balance;
+
+  const selectedStatus = document.getElementById("verify-pay-status-select")?.value || "Paid";
   const payMode = document.getElementById("verify-pay-mode-select")?.value || "UPI / Online";
   const payRef = document.getElementById("verify-pay-ref-input")?.value.trim() || "";
-  const settledAmount = Number(inv.balanceDue || (inv.total - (inv.paidAmount || 0)));
+
+  let settledAmount = 0;
+  let newPaid = 0;
+  let newBal = 0;
+  let finalStatus = "Paid";
+
+  if (selectedStatus === "Partial") {
+    const customAmt = parseFloat(document.getElementById("verify-pay-amount-input")?.value) || 0;
+    if (customAmt <= 0) {
+      if (typeof showFloatingToast === "function") showFloatingToast("⚠️ Please enter a valid payment amount.", "warning");
+      return;
+    }
+    settledAmount = Math.min(customAmt, curBal);
+    newPaid = curPaid + settledAmount;
+    newBal = Math.max(0, curBal - settledAmount);
+    finalStatus = newBal <= 0.01 ? "Paid" : "Partial";
+  } else {
+    // Paid (Full balance settlement)
+    settledAmount = curBal;
+    newPaid = totalAmt;
+    newBal = 0;
+    finalStatus = "Paid";
+  }
 
   // Update Invoice Record
-  inv.paidAmount = Number(inv.total || 0);
-  inv.balanceDue = 0;
-  inv.paymentStatus = "Paid";
+  inv.paidAmount = newPaid;
+  inv.balanceDue = newBal;
+  inv.balancePaid = (inv.balancePaid || 0) + settledAmount;
+  inv.paymentStatus = finalStatus;
   inv.paymentMode = payMode;
   if (payRef) inv.paymentReference = payRef;
 
   if (inv.details) {
-    inv.details.paidAmount = inv.paidAmount;
-    inv.details.balanceDue = 0;
-    inv.details.paymentStatus = "Paid";
+    inv.details.paidAmount = newPaid;
+    inv.details.balanceDue = newBal;
+    inv.details.balancePaid = (inv.details.balancePaid || 0) + settledAmount;
+    inv.details.paymentStatus = finalStatus;
     inv.details.paymentMode = payMode;
     if (payRef) inv.details.paymentReference = payRef;
   }
@@ -13164,12 +13306,17 @@ window.submitInvoicePaymentSettlement = function() {
     amount: settledAmount,
     mode: payMode,
     reference: payRef,
+    status: finalStatus,
     source: "QR Verification Portal Settlement"
   });
 
   // Save to database & sync
-  if (typeof saveToLocalStorage === "function") saveToLocalStorage();
-  if (typeof saveInvoicesToDB === "function") saveInvoicesToDB();
+  try {
+    localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+    window.invoicesDb = invoicesDb;
+  } catch (e) {
+    console.warn("Error persisting invoices to localStorage:", e);
+  }
   if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
     try { window.AaryanDB.saveInvoice(inv); } catch (e) {}
   }
@@ -13178,7 +13325,7 @@ window.submitInvoicePaymentSettlement = function() {
   }
   if (typeof renderInvoicesTable === "function") renderInvoicesTable();
   if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
-  if (typeof updateDashboardStats === "function") updateDashboardStats();
+  if (typeof updateDashboardOverview === "function") updateDashboardOverview();
   if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
 
   // Mesh MQTT Sync
@@ -13186,15 +13333,19 @@ window.submitInvoicePaymentSettlement = function() {
     try { publishMeshDatabaseUpdate("invoicesDb", inv); } catch (e) { console.warn(e); }
   }
 
+  // Audio feedback
+  if (typeof playSuccessChime === "function") playSuccessChime();
+
   // Automatic WhatsApp Receipt & Paid PDF Dispatch
   const custPhone = inv.buyerPhone || inv.details?.buyer?.phone || inv.phone || "";
   if (custPhone) {
+    const isFull = finalStatus === "Paid";
     const msg = `✅ *Payment Received & Verified!*\n\n` +
       `🧾 *Invoice No:* ${inv.invoiceNo}\n` +
       `👤 *Customer:* ${inv.buyerName || inv.details?.buyer?.name || 'Customer'}\n` +
       `💰 *Amount Paid:* ₹ ${formatCurrency(settledAmount)}\n` +
       `💳 *Payment Mode:* ${payMode}` + (payRef ? ` (Ref: ${payRef})` : '') + `\n` +
-      `📊 *Remaining Balance:* ₹ 0.00 (Fully Paid)\n\n` +
+      `📊 *Remaining Balance:* ₹ ${formatCurrency(newBal)} (${isFull ? '100% Fully Paid' : 'Partial'})\n\n` +
       `Thank you for your business with *Aaryan Aqua Needs*! 🌊`;
 
     if (typeof dispatchWhatsAppBotMessage === "function") {
@@ -13211,10 +13362,10 @@ window.submitInvoicePaymentSettlement = function() {
   }
 
   if (typeof showFloatingToast === "function") {
-    showFloatingToast(`✅ Payment of ₹ ${formatCurrency(settledAmount)} recorded! Invoice #${inv.invoiceNo} is now fully paid and receipt sent via WhatsApp.`);
+    showFloatingToast(`✅ Payment of ₹ ${formatCurrency(settledAmount)} recorded! Invoice #${inv.invoiceNo} updated & Dashboard refreshed.`);
   }
 
-  // Re-render modal in fully paid state
+  // Re-render modal in updated state
   openInvoiceVerificationModal(inv.invoiceNo);
 };
 
@@ -13264,4 +13415,8 @@ document.addEventListener("scroll", function(e) {
     }
   }
 }, true);
+
+// Global Dashboard Synchronization Aliases
+window.updateDashboardOverview = updateDashboardOverview;
+window.updateDashboardStats = updateDashboardOverview;
 
