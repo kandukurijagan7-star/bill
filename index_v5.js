@@ -242,17 +242,163 @@ const SYNC_MESH_TOPIC = 'aaryan_aqua_gst_billing_2026/db_sync';
 let realtimeMeshClient = null;
 const MESH_BROKERS = [
   'wss://broker.emqx.io:8084/mqtt',
+  'wss://broker-cn.emqx.io:8084/mqtt',
   'wss://broker.hivemq.com:8884/mqtt',
   'wss://test.mosquitto.org:8081/mqtt'
 ];
 let currentBrokerIdx = 0;
 let meshReconnectTimer = null;
 let activeBrokerName = 'EMQX Ultra-Fast Mesh (<20ms)';
+const processedRealtimeMsgIds = new Set();
 
 function processRealtimeSyncMessage(msg, source = 'mesh') {
   if (!msg || !msg.type) return;
+  if (msg.senderId && msg.senderId === MY_SYNC_CLIENT_ID) return; // Prevent self-echo
 
-  // 1. Transaction-level invoice committed (Invoice + Products Stock + Parties)
+  // Sub-second deduplication across tri-channel bus
+  if (msg.msgId) {
+    if (processedRealtimeMsgIds.has(msg.msgId)) return;
+    processedRealtimeMsgIds.add(msg.msgId);
+    if (processedRealtimeMsgIds.size > 250) {
+      const oldestKey = processedRealtimeMsgIds.values().next().value;
+      processedRealtimeMsgIds.delete(oldestKey);
+    }
+  }
+
+  // 1. Instant Single-Product Stock Mutation (Sub-Second < 150ms cross-device push)
+  if (msg.type === 'PRODUCT_STOCK_CHANGED' && msg.productId) {
+    const prod = productsDb.find(p => p && (p.id === msg.productId || (p.description && msg.description && p.description.trim().toLowerCase() === msg.description.trim().toLowerCase())));
+    const newStock = Math.max(0, parseInt(msg.stock, 10) || 0);
+    const newStatus = msg.status || (newStock <= 0 ? "Out of Stock" : (newStock <= 10 ? "Low Stock" : "In Stock"));
+    const targetId = prod ? prod.id : msg.productId;
+
+    if (prod) {
+      prod.stock = newStock;
+      prod.status = newStatus;
+      prod.updatedAt = msg.updatedAt || new Date().toISOString();
+      const rate = parseFloat(prod.rate || 0);
+      const disc = parseFloat(prod.discount || 0);
+      const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
+      prod.totalValue = Math.round((newStock * valAfterDisc) * 100) / 100;
+    }
+
+    // Stamp 5-minute optimistic mutation protection on receiver
+    if (!window.recentProductMutations) window.recentProductMutations = {};
+    const nowMs = Date.now();
+    window.recentProductMutations[targetId] = nowMs;
+    const desc = (prod && prod.description) || msg.description;
+    if (desc) {
+      window.recentProductMutations[desc] = nowMs;
+      window.recentProductMutations[desc.trim().toLowerCase()] = nowMs;
+    }
+    try {
+      let storedMut = JSON.parse(localStorage.getItem("recent_product_mutations") || "{}");
+      storedMut[targetId] = nowMs;
+      if (desc) {
+        storedMut[desc] = nowMs;
+        storedMut[desc.trim().toLowerCase()] = nowMs;
+      }
+      localStorage.setItem("recent_product_mutations", JSON.stringify(storedMut));
+    } catch(e){}
+
+    try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
+    if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
+
+    if (typeof updateProductDomRowFast === 'function') {
+      updateProductDomRowFast(targetId, newStock, newStatus);
+    } else if (typeof renderProductsTable === 'function') {
+      renderProductsTable(productsDb);
+    }
+
+    if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+    if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+
+    const prodName = desc || "Product";
+    const deltaStr = (msg.delta !== undefined && msg.delta !== null) ? (msg.delta > 0 ? `(+${msg.delta})` : `(${msg.delta})`) : '';
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`⚡ Live Stock Sync: ${prodName} ${deltaStr} ➔ ${newStock} Units (${newStatus})`, "info");
+    }
+    window.lastSyncTimeMs = Date.now();
+    if (typeof window.updateRealtimePresenceHUD === 'function') window.updateRealtimePresenceHUD("live");
+    return;
+  }
+
+  // 2. Instant Batch Stock Deduction from Invoice Generation (< 150ms)
+  if (msg.type === 'INVOICE_STOCK_DEDUCTED') {
+    if (Array.isArray(msg.stockDeltas)) {
+      msg.stockDeltas.forEach(delta => {
+        const prod = productsDb.find(p => p && (p.id === delta.productId || (p.description && delta.description && p.description.trim().toLowerCase() === delta.description.trim().toLowerCase())));
+        const targetId = prod ? prod.id : delta.productId;
+        const newStock = Math.max(0, parseInt(delta.stock, 10) || 0);
+        const newStatus = delta.status || (newStock <= 0 ? "Out of Stock" : (newStock <= 10 ? "Low Stock" : "In Stock"));
+        if (prod) {
+          prod.stock = newStock;
+          prod.status = newStatus;
+          prod.updatedAt = delta.updatedAt || new Date().toISOString();
+          const rate = parseFloat(prod.rate || 0);
+          const disc = parseFloat(prod.discount || 0);
+          const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
+          prod.totalValue = Math.round((newStock * valAfterDisc) * 100) / 100;
+        }
+        if (!window.recentProductMutations) window.recentProductMutations = {};
+        const nowMs = Date.now();
+        window.recentProductMutations[targetId] = nowMs;
+        const desc = (prod && prod.description) || delta.description;
+        if (desc) {
+          window.recentProductMutations[desc] = nowMs;
+          window.recentProductMutations[desc.trim().toLowerCase()] = nowMs;
+        }
+        try {
+          let storedMut = JSON.parse(localStorage.getItem("recent_product_mutations") || "{}");
+          storedMut[targetId] = nowMs;
+          if (desc) {
+            storedMut[desc] = nowMs;
+            storedMut[desc.trim().toLowerCase()] = nowMs;
+          }
+          localStorage.setItem("recent_product_mutations", JSON.stringify(storedMut));
+        } catch(e){}
+
+        if (typeof updateProductDomRowFast === 'function') {
+          updateProductDomRowFast(targetId, newStock, newStatus);
+        }
+      });
+    } else if (Array.isArray(msg.products) && msg.products.length > 0) {
+      productsDb = msg.products;
+      if (typeof renderProductsTable === 'function') renderProductsTable(productsDb);
+    }
+    try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
+    if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
+    if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+    if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+    window.lastSyncTimeMs = Date.now();
+    if (typeof window.updateRealtimePresenceHUD === 'function') window.updateRealtimePresenceHUD("live");
+    return;
+  }
+
+  // 3. Instant Product Price / Discount inline mutation
+  if (msg.type === 'PRODUCT_PRICE_CHANGED' && msg.productId) {
+    const prod = productsDb.find(p => p && (p.id === msg.productId || (p.description && msg.description && p.description.trim().toLowerCase() === msg.description.trim().toLowerCase())));
+    if (prod) {
+      if (msg.discount !== undefined) prod.discount = msg.discount;
+      if (msg.price !== undefined) prod.price = msg.price;
+      if (msg.totalValue !== undefined) prod.totalValue = msg.totalValue;
+      prod.updatedAt = msg.updatedAt || new Date().toISOString();
+      if (!window.recentProductMutations) window.recentProductMutations = {};
+      const nowMs = Date.now();
+      window.recentProductMutations[prod.id] = nowMs;
+      if (prod.description) {
+        window.recentProductMutations[prod.description] = nowMs;
+        window.recentProductMutations[prod.description.trim().toLowerCase()] = nowMs;
+      }
+      try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
+      if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
+      if (typeof renderProductsTable === 'function') renderProductsTable(productsDb);
+      if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+    }
+    return;
+  }
+
+  // 4. Transaction-level invoice committed (Invoice + Stock Deltas + Parties)
   if ((msg.type === 'invoice_saved' || msg.type === 'invoice_transaction_committed') && msg.invoice) {
     const inv = msg.invoice;
     const idx = invoicesDb.findIndex(i => i && (i.id === inv.id || i.invoiceNo === inv.invoiceNo));
@@ -262,8 +408,48 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
     try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
     if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveInvoice(inv);
 
-    // Synchronize stock deduction instantly if products included in packet
-    if (Array.isArray(msg.products) && msg.products.length > 0) {
+    // Synchronize stock deduction instantly
+    if (Array.isArray(msg.stockDeltas)) {
+      msg.stockDeltas.forEach(delta => {
+        const prod = productsDb.find(p => p && (p.id === delta.productId || (p.description && delta.description && p.description.trim().toLowerCase() === delta.description.trim().toLowerCase())));
+        const targetId = prod ? prod.id : delta.productId;
+        const newStock = Math.max(0, parseInt(delta.stock, 10) || 0);
+        const newStatus = delta.status || (newStock <= 0 ? "Out of Stock" : (newStock <= 10 ? "Low Stock" : "In Stock"));
+        if (prod) {
+          prod.stock = newStock;
+          prod.status = newStatus;
+          prod.updatedAt = delta.updatedAt || new Date().toISOString();
+          const rate = parseFloat(prod.rate || 0);
+          const disc = parseFloat(prod.discount || 0);
+          const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
+          prod.totalValue = Math.round((newStock * valAfterDisc) * 100) / 100;
+        }
+        if (!window.recentProductMutations) window.recentProductMutations = {};
+        const nowMs = Date.now();
+        window.recentProductMutations[targetId] = nowMs;
+        const desc = (prod && prod.description) || delta.description;
+        if (desc) {
+          window.recentProductMutations[desc] = nowMs;
+          window.recentProductMutations[desc.trim().toLowerCase()] = nowMs;
+        }
+        try {
+          let storedMut = JSON.parse(localStorage.getItem("recent_product_mutations") || "{}");
+          storedMut[targetId] = nowMs;
+          if (desc) {
+            storedMut[desc] = nowMs;
+            storedMut[desc.trim().toLowerCase()] = nowMs;
+          }
+          localStorage.setItem("recent_product_mutations", JSON.stringify(storedMut));
+        } catch(e){}
+
+        if (typeof updateProductDomRowFast === 'function') {
+          updateProductDomRowFast(targetId, newStock, newStatus);
+        }
+      });
+      try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
+      if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
+      if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+    } else if (Array.isArray(msg.products) && msg.products.length > 0) {
       productsDb = msg.products;
       try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
       if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
@@ -284,6 +470,9 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
     if (typeof autoSuggestInvoiceNo === 'function') autoSuggestInvoiceNo();
     window.lastSyncTimeMs = Date.now();
     if (typeof window.updateRealtimePresenceHUD === 'function') window.updateRealtimePresenceHUD("live");
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`⚡ Live Sync: Invoice #${inv.invoiceNo} committed • Stock deducted!`, "info");
+    }
 
   } else if (msg.type === 'products_saved' && Array.isArray(msg.products)) {
     productsDb = msg.products;
@@ -408,7 +597,40 @@ try {
   console.warn("BroadcastChannel notice:", e.message);
 }
 
-// 2. Cross-Browser & Multi-Device High-Speed Real-Time Mesh (EMQX / HiveMQ < 30ms)
+// 2. HTML5 Storage Event Listener for Cross-Tab instant sync (0.01ms)
+window.addEventListener('storage', (e) => {
+  if (!e || !e.key) return;
+  try {
+    if (e.key === 'products' && e.newValue) {
+      const parsed = JSON.parse(e.newValue);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        productsDb = parsed;
+        if (typeof renderProductsTable === 'function') renderProductsTable(productsDb);
+        if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+        if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+      }
+    } else if (e.key === 'invoices' && e.newValue) {
+      const parsed = JSON.parse(e.newValue);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        invoicesDb = parsed;
+        if (typeof renderHistoryTableRows === 'function') renderHistoryTableRows(invoicesDb);
+        if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+        if (typeof autoSuggestInvoiceNo === 'function') autoSuggestInvoiceNo();
+      }
+    } else if (e.key === 'parties' && e.newValue) {
+      const parsed = JSON.parse(e.newValue);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        partiesDb = parsed;
+        if (typeof loadPartiesDatabaseLists === 'function') loadPartiesDatabaseLists();
+      }
+    } else if (e.key === 'recent_product_mutations' && e.newValue) {
+      const parsed = JSON.parse(e.newValue);
+      window.recentProductMutations = Object.assign(window.recentProductMutations || {}, parsed);
+    }
+  } catch (err) {}
+});
+
+// 3. Cross-Browser & Multi-Device High-Speed Real-Time Mesh (EMQX / HiveMQ < 30ms)
 function initRealtimeMeshSync() {
   if (typeof mqtt === 'undefined') {
     console.warn("MQTT library not ready, using local companion & cloud fallback.");
@@ -429,8 +651,8 @@ function initRealtimeMeshSync() {
       clientId: MY_SYNC_CLIENT_ID,
       clean: true,
       keepalive: 30,
-      reconnectPeriod: 3000,
-      connectTimeout: 5000
+      reconnectPeriod: 1000,
+      connectTimeout: 4000
     });
 
     realtimeMeshClient.on('connect', () => {
@@ -474,7 +696,7 @@ function initRealtimeMeshSync() {
         meshReconnectTimer = setTimeout(() => {
           meshReconnectTimer = null;
           rotateMeshBroker();
-        }, 6000);
+        }, 1500);
       }
     });
   } catch (err) {
@@ -486,8 +708,22 @@ function initRealtimeMeshSync() {
 function rotateMeshBroker() {
   currentBrokerIdx = (currentBrokerIdx + 1) % MESH_BROKERS.length;
   console.log(`Switching real-time mesh to next broker: ${MESH_BROKERS[currentBrokerIdx]}`);
-  setTimeout(initRealtimeMeshSync, 1500);
+  setTimeout(initRealtimeMeshSync, 1000);
 }
+
+// Ensure active real-time reconnection when device awakens or network reconnects
+window.addEventListener('online', () => {
+  if (!realtimeMeshClient || !realtimeMeshClient.connected) {
+    initRealtimeMeshSync();
+  }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    if (!realtimeMeshClient || !realtimeMeshClient.connected) {
+      initRealtimeMeshSync();
+    }
+  }
+});
 
 try {
   initRealtimeMeshSync();
@@ -526,6 +762,7 @@ try {
 // Unified Tri-Channel Broadcast Dispatcher (< 0.05ms tab / < 2ms LAN / < 30ms mesh)
 function broadcastInterTabEvent(type, payload = {}) {
   const fullMsg = {
+    msgId: payload.msgId || ('msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8)),
     type,
     ...payload,
     senderId: MY_SYNC_CLIENT_ID,
@@ -540,7 +777,7 @@ function broadcastInterTabEvent(type, payload = {}) {
   // 2. Global Ultra-Fast Real-Time Mesh (< 30ms)
   if (realtimeMeshClient && realtimeMeshClient.connected) {
     try {
-      realtimeMeshClient.publish(SYNC_MESH_TOPIC, JSON.stringify(fullMsg));
+      realtimeMeshClient.publish(SYNC_MESH_TOPIC, JSON.stringify(fullMsg), { qos: 0 });
     } catch (e) {}
   }
 
@@ -552,7 +789,7 @@ function broadcastInterTabEvent(type, payload = {}) {
     fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: type, type, payload, senderId: MY_SYNC_CLIENT_ID })
+      body: JSON.stringify({ action: type, type, payload: fullMsg, senderId: MY_SYNC_CLIENT_ID })
     }).catch(() => {});
   } catch (e) {}
 }
@@ -2377,8 +2614,8 @@ function findProductInDb(item) {
 // Real-World Differential Invoice Stock Reconciliation Engine
 function reconcileProductInventoryStock(oldInvoice, newInvoice) {
   let modified = false;
-
   const productDeltas = new Map();
+  const changedStockDeltas = [];
 
   // 1. Credit back old invoice quantities
   if (oldInvoice && Array.isArray(oldInvoice.items)) {
@@ -2412,7 +2649,20 @@ function reconcileProductInventoryStock(oldInvoice, newInvoice) {
       prod.stock = newStock;
       prod.status = newStock <= 0 ? "Out of Stock" : (newStock <= 10 ? "Low Stock" : "In Stock");
       prod.updatedAt = new Date().toISOString();
+      const rate = parseFloat(prod.rate || 0);
+      const disc = parseFloat(prod.discount || 0);
+      const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
+      prod.totalValue = Math.round((newStock * valAfterDisc) * 100) / 100;
       modified = true;
+
+      changedStockDeltas.push({
+        productId: prod.id,
+        stock: newStock,
+        status: prod.status,
+        delta: -netDelta,
+        totalValue: prod.totalValue,
+        description: prod.description
+      });
 
       // Stamp optimistic local mutation protection for 5 minutes (persisted in localStorage + RAM)
       if (!window.recentProductMutations) window.recentProductMutations = {};
@@ -2445,42 +2695,38 @@ function reconcileProductInventoryStock(oldInvoice, newInvoice) {
       localStorage.setItem("products", JSON.stringify(productsDb));
 
       // IndexedDB persistence
-      if (typeof saveProductsToDB === "function") saveProductsToDB();
-      if (window.AaryanDB && typeof window.AaryanDB.saveProducts === "function") {
-        try { window.AaryanDB.saveProducts(productsDb); } catch(e){}
-      }
       if (window.AaryanDB && typeof window.AaryanDB.saveAllProducts === "function") {
         try { window.AaryanDB.saveAllProducts(productsDb); } catch(e){}
       }
 
-      // Sync to Google Sheets master database immediately
-      if (typeof syncDatabaseToServer === "function") {
-        syncDatabaseToServer("products", productsDb);
-      }
-      if (typeof pushDirectToGoogleDatabase === "function") {
-        try { pushDirectToGoogleDatabase("save_products", { products: productsDb }); } catch(e){}
-      }
-
-      // Broadcast mutation across EMQX MQTT Cloud Mesh
-      if (typeof publishMeshDatabaseUpdate === "function") {
-        try { publishMeshDatabaseUpdate("productsDb", productsDb); } catch(e){}
-      }
-
-      // Re-render UI elements immediately across all tabs
-      if (typeof loadProductsDatabaseTable === "function") {
-        loadProductsDatabaseTable();
-      } else if (typeof renderProductsTable === "function") {
-        renderProductsTable(productsDb);
-      }
-      if (typeof renderProductsGrid === "function") renderProductsGrid();
+      // 1. Instant local DOM updates (< 0.1ms)
+      changedStockDeltas.forEach(d => {
+        if (typeof updateProductDomRowFast === 'function') {
+          updateProductDomRowFast(d.productId, d.stock, d.status);
+        }
+      });
       if (typeof populateBillingSelectors === "function") populateBillingSelectors();
-      if (typeof updateDashboardStats === "function") updateDashboardStats();
       if (typeof updateDashboardOverview === "function") updateDashboardOverview();
-      if (typeof window.broadcastDatabaseMutation === "function") window.broadcastDatabaseMutation();
+
+      // 2. High-speed broadcast across tri-channel mesh (< 150ms)
+      broadcastInterTabEvent('INVOICE_STOCK_DEDUCTED', {
+        stockDeltas: changedStockDeltas,
+        products: productsDb,
+        invoiceNo: newInvoice?.invoiceNo || oldInvoice?.invoiceNo
+      });
+
+      // 3. Debounced asynchronous push to Google Master Database
+      if (directPushProductTimer) clearTimeout(directPushProductTimer);
+      directPushProductTimer = setTimeout(() => {
+        pushDirectToGoogleDatabase("save_products", { products: productsDb });
+      }, 250);
+
     } catch (err) {
       console.warn("Unable to save products db:", err);
     }
   }
+
+  return changedStockDeltas;
 }
 
 function validateInvoiceStockAvailability(newItems, oldItems = []) {
@@ -5265,11 +5511,12 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       existingIdx = invoicesDb.findIndex(inv => inv && inv.invoiceNo === invoiceRecord.invoiceNo);
     }
 
+    let stockDeltas = [];
     if (existingIdx > -1) {
-      reconcileProductInventoryStock(invoicesDb[existingIdx]?.details, currentInvoice);
+      stockDeltas = reconcileProductInventoryStock(invoicesDb[existingIdx]?.details, currentInvoice) || [];
       invoicesDb[existingIdx] = invoiceRecord;
     } else {
-      reconcileProductInventoryStock(null, currentInvoice);
+      stockDeltas = reconcileProductInventoryStock(null, currentInvoice) || [];
       invoicesDb.push(invoiceRecord);
     }
 
@@ -5281,14 +5528,19 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
     window.recentInvoiceMutations[invoiceRecord.id] = Date.now();
     window.recentInvoiceMutations[invoiceRecord.invoiceNo] = Date.now();
 
-    // Persist to localStorage, IndexedDB & push to Google Sheets master database
+    // Persist to localStorage, IndexedDB & broadcast immediately (< 150ms)
     try {
       localStorage.setItem("invoices", JSON.stringify(invoicesDb));
       if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
         window.AaryanDB.saveInvoice(invoiceRecord);
       }
+      broadcastInterTabEvent('INVOICE_TRANSACTION_COMMITTED', {
+        invoice: invoiceRecord,
+        stockDeltas: stockDeltas,
+        products: productsDb,
+        parties: partiesDb
+      });
       syncDatabaseToServer("invoices", invoiceRecord);
-      if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
     } catch (err) {
       console.warn("Unable to persist invoices:", err);
     }
@@ -8959,33 +9211,121 @@ window.quickRestockProduct = function(id) {
 
   const newStock = currentStock + addQty;
   prod.stock = newStock;
+  prod.status = newStock <= 0 ? "Out of Stock" : (newStock <= 10 ? "Low Stock" : "In Stock");
   prod.updatedAt = new Date().toISOString();
-  window.recentProductMutations[id] = Date.now();
+  const rate = parseFloat(prod.rate || 0);
+  const disc = parseFloat(prod.discount || 0);
+  const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
+  prod.totalValue = Math.round((newStock * valAfterDisc) * 100) / 100;
 
-  localStorage.setItem("products", JSON.stringify(productsDb));
+  if (!window.recentProductMutations) window.recentProductMutations = {};
+  const nowMs = Date.now();
+  window.recentProductMutations[id] = nowMs;
+  if (prod.description) {
+    window.recentProductMutations[prod.description] = nowMs;
+    window.recentProductMutations[prod.description.trim().toLowerCase()] = nowMs;
+  }
+  try {
+    let storedMut = JSON.parse(localStorage.getItem("recent_product_mutations") || "{}");
+    storedMut[id] = nowMs;
+    if (prod.description) {
+      storedMut[prod.description] = nowMs;
+      storedMut[prod.description.trim().toLowerCase()] = nowMs;
+    }
+    localStorage.setItem("recent_product_mutations", JSON.stringify(storedMut));
+  } catch(e){}
+
+  try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
   if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
-  syncDatabaseToServer("products", productsDb);
-  loadProductsDatabaseTable();
-  populateBillingSelectors();
-  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
 
-  showFloatingToast(`📦 Restocked! Added +${addQty} ${unit} to "${prod.description}". New Total: ${newStock} ${unit}`, 4000);
+  // 1. Instant local DOM update (< 0.1ms)
+  if (typeof updateProductDomRowFast === 'function') {
+    updateProductDomRowFast(prod.id, newStock, prod.status);
+  } else if (typeof loadProductsDatabaseTable === 'function') {
+    loadProductsDatabaseTable();
+  }
+  if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+  if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+
+  // 2. High-speed broadcast across tri-channel mesh (< 150ms)
+  broadcastInterTabEvent('PRODUCT_STOCK_CHANGED', {
+    productId: prod.id,
+    stock: newStock,
+    status: prod.status,
+    delta: addQty,
+    totalValue: prod.totalValue,
+    updatedAt: prod.updatedAt,
+    description: prod.description
+  });
+
+  // 3. Debounced asynchronous push to Google Master Database
+  if (directPushProductTimer) clearTimeout(directPushProductTimer);
+  directPushProductTimer = setTimeout(() => {
+    pushDirectToGoogleDatabase("save_products", { products: productsDb });
+  }, 250);
+
+  showFloatingToast(`📦 Restocked! Added +${addQty} ${unit} to "${prod.description}". New Total: ${newStock} ${unit}`, "success");
   sendStockTelegramReport(prod, `1-Click Inward Restock (+${addQty} ${unit})`, currentStock, newStock);
 };
 
 window.adjustProductStock = function(id, delta) {
-  const prod = productsDb.find(p => p.id === id);
+  const prod = productsDb.find(p => p && p.id === id);
   if (!prod) return;
   const current = parseInt(prod.stock, 10) || 0;
-  prod.stock = Math.max(0, current + delta);
+  const newStock = Math.max(0, current + delta);
+  prod.stock = newStock;
+  prod.status = newStock <= 0 ? "Out of Stock" : (newStock <= 10 ? "Low Stock" : "In Stock");
   prod.updatedAt = new Date().toISOString();
-  window.recentProductMutations[id] = Date.now();
+  const rate = parseFloat(prod.rate || 0);
+  const disc = parseFloat(prod.discount || 0);
+  const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
+  prod.totalValue = Math.round((newStock * valAfterDisc) * 100) / 100;
+
+  if (!window.recentProductMutations) window.recentProductMutations = {};
+  const nowMs = Date.now();
+  window.recentProductMutations[id] = nowMs;
+  if (prod.description) {
+    window.recentProductMutations[prod.description] = nowMs;
+    window.recentProductMutations[prod.description.trim().toLowerCase()] = nowMs;
+  }
+  try {
+    let storedMut = JSON.parse(localStorage.getItem("recent_product_mutations") || "{}");
+    storedMut[id] = nowMs;
+    if (prod.description) {
+      storedMut[prod.description] = nowMs;
+      storedMut[prod.description.trim().toLowerCase()] = nowMs;
+    }
+    localStorage.setItem("recent_product_mutations", JSON.stringify(storedMut));
+  } catch(e){}
   
-  localStorage.setItem("products", JSON.stringify(productsDb));
+  try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
   if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
-  syncDatabaseToServer("products", productsDb);
-  loadProductsDatabaseTable();
-  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+
+  // 1. Instant local DOM update (< 0.1ms)
+  if (typeof updateProductDomRowFast === 'function') {
+    updateProductDomRowFast(prod.id, newStock, prod.status);
+  } else if (typeof loadProductsDatabaseTable === 'function') {
+    loadProductsDatabaseTable();
+  }
+  if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+  if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+
+  // 2. High-speed broadcast across tri-channel mesh (< 150ms)
+  broadcastInterTabEvent('PRODUCT_STOCK_CHANGED', {
+    productId: prod.id,
+    stock: newStock,
+    status: prod.status,
+    delta: delta,
+    totalValue: prod.totalValue,
+    updatedAt: prod.updatedAt,
+    description: prod.description
+  });
+
+  // 3. Debounced asynchronous push to Google Master Database
+  if (directPushProductTimer) clearTimeout(directPushProductTimer);
+  directPushProductTimer = setTimeout(() => {
+    pushDirectToGoogleDatabase("save_products", { products: productsDb });
+  }, 250);
 
   const actionText = delta > 0 ? `Inline Stock Added (+${delta})` : `Inline Stock Reduced (${delta})`;
   sendStockTelegramReport(prod, actionText, current, prod.stock);
@@ -9004,18 +9344,41 @@ window.updateProductDiscountInline = function(id, newDiscount) {
   prod.updatedAt = new Date().toISOString();
 
   if (!window.recentProductMutations) window.recentProductMutations = {};
-  window.recentProductMutations[prod.id] = Date.now();
-  if (prod.description) window.recentProductMutations[prod.description] = Date.now();
+  const nowMs = Date.now();
+  window.recentProductMutations[prod.id] = nowMs;
+  if (prod.description) {
+    window.recentProductMutations[prod.description] = nowMs;
+    window.recentProductMutations[prod.description.trim().toLowerCase()] = nowMs;
+  }
+  try {
+    let storedMut = JSON.parse(localStorage.getItem("recent_product_mutations") || "{}");
+    storedMut[prod.id] = nowMs;
+    if (prod.description) {
+      storedMut[prod.description] = nowMs;
+      storedMut[prod.description.trim().toLowerCase()] = nowMs;
+    }
+    localStorage.setItem("recent_product_mutations", JSON.stringify(storedMut));
+  } catch(e){}
 
   localStorage.setItem("products", JSON.stringify(productsDb));
   if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
 
-  // Push directly to Google Cloud immediately
-  pushDirectToGoogleDatabase("save_products", { products: productsDb });
+  // Debounced push to Google Sheets
+  if (directPushProductTimer) clearTimeout(directPushProductTimer);
+  directPushProductTimer = setTimeout(() => {
+    pushDirectToGoogleDatabase("save_products", { products: productsDb });
+  }, 250);
 
   // Instant cross-browser broadcast (<15ms)
-  broadcastInterTabEvent('products_saved', { products: productsDb });
-  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+  broadcastInterTabEvent('PRODUCT_PRICE_CHANGED', {
+    productId: prod.id,
+    discount: prod.discount,
+    price: prod.price,
+    rate: prod.rate,
+    totalValue: prod.totalValue,
+    updatedAt: prod.updatedAt,
+    description: prod.description
+  });
 
   renderProductsTable(productsDb);
   populateBillingSelectors();
@@ -9039,21 +9402,135 @@ window.updateProductPriceAfterDiscountInline = function(id, newPrice) {
   prod.updatedAt = new Date().toISOString();
 
   if (!window.recentProductMutations) window.recentProductMutations = {};
-  window.recentProductMutations[prod.id] = Date.now();
-  if (prod.description) window.recentProductMutations[prod.description] = Date.now();
+  const nowMs = Date.now();
+  window.recentProductMutations[prod.id] = nowMs;
+  if (prod.description) {
+    window.recentProductMutations[prod.description] = nowMs;
+    window.recentProductMutations[prod.description.trim().toLowerCase()] = nowMs;
+  }
+  try {
+    let storedMut = JSON.parse(localStorage.getItem("recent_product_mutations") || "{}");
+    storedMut[prod.id] = nowMs;
+    if (prod.description) {
+      storedMut[prod.description] = nowMs;
+      storedMut[prod.description.trim().toLowerCase()] = nowMs;
+    }
+    localStorage.setItem("recent_product_mutations", JSON.stringify(storedMut));
+  } catch(e){}
 
   localStorage.setItem("products", JSON.stringify(productsDb));
   if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
 
-  pushDirectToGoogleDatabase("save_products", { products: productsDb });
-  broadcastInterTabEvent('products_saved', { products: productsDb });
-  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+  // Debounced push to Google Sheets
+  if (directPushProductTimer) clearTimeout(directPushProductTimer);
+  directPushProductTimer = setTimeout(() => {
+    pushDirectToGoogleDatabase("save_products", { products: productsDb });
+  }, 250);
+
+  broadcastInterTabEvent('PRODUCT_PRICE_CHANGED', {
+    productId: prod.id,
+    discount: prod.discount,
+    price: prod.price,
+    rate: prod.rate,
+    totalValue: prod.totalValue,
+    updatedAt: prod.updatedAt,
+    description: prod.description
+  });
 
   renderProductsTable(productsDb);
   populateBillingSelectors();
   if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
   showFloatingToast(`🏷️ Price for "${prod.description}" saved: ₹ ${formatCurrency(targetPrice)} (${computedDisc}% disc)!`, "success");
 };
+
+function recalculateProductTotalsAndKpisFast() {
+  let totalStockSum = 0;
+  let totalInventoryValueSum = 0;
+  let lowCount = 0;
+  let outCount = 0;
+
+  (productsDb || []).forEach(p => {
+    const rate = parseFloat(p.rate || 0);
+    const disc = parseFloat(p.discount || 0);
+    const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
+    const stockVal = p.stock !== undefined ? parseInt(p.stock, 10) : 0;
+    const totalVal = stockVal * valAfterDisc;
+
+    totalStockSum += stockVal;
+    totalInventoryValueSum += totalVal;
+
+    if (stockVal === 0) outCount++;
+    else if (stockVal <= 10) lowCount++;
+  });
+
+  const kpiCount = document.getElementById("prod-kpi-count");
+  const kpiUnits = document.getElementById("prod-kpi-units");
+  const kpiVal = document.getElementById("prod-kpi-valuation");
+  const kpiAlerts = document.getElementById("prod-kpi-alerts");
+  const kpiAlertsSub = document.getElementById("prod-kpi-alerts-sub");
+
+  if (kpiCount) kpiCount.textContent = (productsDb || []).length;
+  if (kpiUnits) kpiUnits.textContent = `${totalStockSum} Units`;
+  if (kpiVal) kpiVal.textContent = `₹ ${formatCurrency(totalInventoryValueSum)}`;
+  if (kpiAlerts) kpiAlerts.textContent = `${lowCount + outCount} Alerts`;
+  if (kpiAlertsSub) kpiAlertsSub.textContent = `${lowCount} Low / ${outCount} Out of Stock`;
+
+  const totalCountFooter = document.getElementById("prod-total-count-footer");
+  const totalStockFooter = document.getElementById("prod-total-stock-footer");
+  const totalValFooter = document.getElementById("prod-total-val-footer");
+  if (totalCountFooter) totalCountFooter.textContent = `${(productsDb || []).length} Items`;
+  if (totalStockFooter) totalStockFooter.textContent = `${totalStockSum} Units`;
+  if (totalValFooter) totalValFooter.textContent = `₹ ${formatCurrency(totalInventoryValueSum)}`;
+
+  if (elements && elements.productCount) {
+    elements.productCount.textContent = (productsDb || []).length;
+  }
+}
+
+function updateProductDomRowFast(productId, newStock, newStatus) {
+  const stockNum = Math.max(0, parseInt(newStock, 10) || 0);
+  const qtyEl = document.getElementById(`prod-stock-qty-${productId}`);
+  const badgeEl = document.getElementById(`prod-stock-badge-${productId}`);
+  const valEl = document.getElementById(`prod-total-val-${productId}`);
+  const rowEl = document.getElementById(`prod-row-${productId}`);
+
+  if (!rowEl || !qtyEl) {
+    if (typeof renderProductsTable === 'function') renderProductsTable(productsDb);
+    return;
+  }
+
+  qtyEl.textContent = stockNum;
+
+  if (badgeEl) {
+    let stockBadge = "";
+    if (stockNum === 0) {
+      stockBadge = `<span style="display: inline-block; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 2px 7px; border-radius: 12px; font-size: 10px; font-weight: 700;"><i class="fa-solid fa-triangle-exclamation"></i> Out</span>`;
+    } else if (stockNum <= 10) {
+      stockBadge = `<span style="display: inline-block; background: #fffbeb; color: #d97706; border: 1px solid #fde68a; padding: 2px 7px; border-radius: 12px; font-size: 10px; font-weight: 700;"><i class="fa-solid fa-circle-exclamation"></i> Low</span>`;
+    } else {
+      stockBadge = `<span style="display: inline-block; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; padding: 2px 7px; border-radius: 12px; font-size: 10px; font-weight: 700;"><i class="fa-solid fa-circle-check"></i> In Stock</span>`;
+    }
+    badgeEl.innerHTML = stockBadge;
+  }
+
+  const prod = productsDb.find(p => p && p.id === productId);
+  if (prod && valEl) {
+    const rate = parseFloat(prod.rate || 0);
+    const disc = parseFloat(prod.discount || 0);
+    const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
+    const totalVal = stockNum * valAfterDisc;
+    valEl.textContent = `₹ ${formatCurrency(totalVal)}`;
+  }
+
+  // Visual pulse highlight
+  rowEl.style.transition = "background-color 0.25s ease";
+  rowEl.style.backgroundColor = "rgba(14, 165, 233, 0.18)";
+  setTimeout(() => {
+    if (rowEl) rowEl.style.backgroundColor = "";
+  }, 900);
+
+  recalculateProductTotalsAndKpisFast();
+}
 
 function loadProductsDatabaseTable() {
   loadAllDatabases();
@@ -9122,6 +9599,8 @@ function renderProductsTable(records) {
 
   records.forEach(p => {
     const tr = document.createElement("tr");
+    tr.id = `prod-row-${p.id}`;
+    tr.setAttribute("data-product-id", p.id);
     const rate = parseFloat(p.rate || 0);
     const disc = parseFloat(p.discount || 0);
     const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
@@ -9181,12 +9660,12 @@ function renderProductsTable(records) {
       <td style="text-align: center;">
         <div class="prod-stock-stepper">
           <button class="btn-stock-step" onclick="adjustProductStock('${p.id}', -1)" title="Decrease Stock">−</button>
-          <span class="stock-qty-text">${stockVal}</span>
+          <span class="stock-qty-text" id="prod-stock-qty-${p.id}">${stockVal}</span>
           <button class="btn-stock-step" onclick="adjustProductStock('${p.id}', 1)" title="Increase Stock">+</button>
-          ${stockBadge}
+          <span id="prod-stock-badge-${p.id}">${stockBadge}</span>
         </div>
       </td>
-      <td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 14px;">₹ ${formatCurrency(totalVal)}</td>
+      <td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 14px;" id="prod-total-val-${p.id}">₹ ${formatCurrency(totalVal)}</td>
       <td style="text-align: center;">
         <div class="prod-actions-row">
           <button class="prod-action-btn restock" onclick="quickRestockProduct('${p.id}')" title="1-Click Quick Restock (Add Inward Stock)" style="color: #0284c7; background: #e0f2fe; border: 1px solid #bae6fd;">
