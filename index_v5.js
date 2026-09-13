@@ -1921,19 +1921,23 @@ function formatTaxValue(val) {
 function initializeApp() {
   // One-time cache clear and service worker unregistration for v34 to clear out old fields cached by service worker
   if (localStorage.getItem("sw_cleared_v95_cache_clean") !== "true") {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(registrations => {
-        for (let registration of registrations) {
-          registration.unregister();
-        }
-      });
+    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+      try {
+        navigator.serviceWorker.getRegistrations().then(registrations => {
+          for (let registration of registrations) {
+            registration.unregister();
+          }
+        }).catch(() => {});
+      } catch (e) {}
     }
-    if ('caches' in window) {
-      caches.keys().then(names => {
-        for (let name of names) {
-          caches.delete(name);
-        }
-      });
+    if ('caches' in window && window.location.protocol.startsWith('http')) {
+      try {
+        caches.keys().then(names => {
+          for (let name of names) {
+            caches.delete(name);
+          }
+        }).catch(() => {});
+      } catch (e) {}
     }
     localStorage.setItem("sw_cleared_v95_cache_clean", "true");
     setTimeout(() => {

@@ -23,32 +23,41 @@
       document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.5/mqtt.min.js"><\/script>');
     }
   </script>
-  <!-- PWA Manifest & Mobile Meta -->
+  <!-- PWA Manifest & App Icons -->
   <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/jpeg" href="lord_ganesha.jpg">
+  <link rel="shortcut icon" type="image/jpeg" href="lord_ganesha.jpg">
+  <link rel="apple-touch-icon" href="lord_ganesha.jpg">
   <meta name="theme-color" content="#06b6d4">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Aaryan Aqua">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <!-- Force unregister service worker and clear cache to apply updates -->
+  <!-- Safe service worker unregister and cache refresh -->
   <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(function(registrations) {
-        for (var registration of registrations) {
-          registration.unregister();
-        }
-      });
+    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+      try {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for (var registration of registrations) {
+            registration.unregister();
+          }
+        }).catch(function() {});
+      } catch (e) {}
     }
-    if ('caches' in window) {
-      caches.keys().then(function(names) {
-        for (var name of names) {
-          caches.delete(name);
-        }
-      });
+    if ('caches' in window && window.location.protocol.startsWith('http')) {
+      try {
+        caches.keys().then(function(names) {
+          for (var name of names) {
+            caches.delete(name);
+          }
+        }).catch(function() {});
+      } catch (e) {}
     }
     // Build Version Enforcement: Clears stale caches when new build is deployed
-    window.__APP_BUILD_VERSION__ = "v318_live_wa_qr";
+    window.__APP_BUILD_VERSION__ = "v339_clean_health_pass";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
