@@ -2330,23 +2330,38 @@ function loadAllDatabases() {
 // Robust Helper: Normalize & locate product in master catalog
 function findProductInDb(item) {
   if (!item || !Array.isArray(productsDb)) return null;
-  const itemDesc = (item.description || "").trim().toLowerCase();
-  const itemId = item.productId || item.id;
+  const rawDesc = (item.description || "").trim();
+  const normalizedDesc = rawDesc.toLowerCase().replace(/\s+/g, ' ');
+  const explicitProdId = item.productId;
 
-  if (itemId) {
-    const byId = productsDb.find(p => p && p.id === itemId);
-    if (byId) return byId;
+  // 1. Match by explicit productId if present
+  if (explicitProdId) {
+    const byExplicitId = productsDb.find(p => p && (p.id === explicitProdId || String(p.id) === String(explicitProdId)));
+    if (byExplicitId) return byExplicitId;
   }
-  if (itemDesc) {
-    const byDesc = productsDb.find(p => p && (p.description || "").trim().toLowerCase() === itemDesc);
+
+  // 2. Match by exact normalized description
+  if (normalizedDesc) {
+    const byDesc = productsDb.find(p => p && (p.description || "").trim().toLowerCase().replace(/\s+/g, ' ') === normalizedDesc);
     if (byDesc) return byDesc;
+
+    // 3. Fallback: match by p.id if item.id matches product id directly
+    if (item.id) {
+      const byItemId = productsDb.find(p => p && (p.id === item.id || String(p.id) === String(item.id)));
+      if (byItemId) return byItemId;
+    }
+
+    // 4. Fallback: partial / substring match
+    const byPartial = productsDb.find(p => p && p.description && (
+      p.description.trim().toLowerCase().includes(normalizedDesc) ||
+      normalizedDesc.includes(p.description.trim().toLowerCase())
+    ));
+    if (byPartial) return byPartial;
   }
   return null;
 }
 
 // Real-World Differential Invoice Stock Reconciliation Engine
-// - If invoice items/quantities are UNCHANGED upon edit, stock delta is 0 and existing stock is untouched!
-// - If quantities change, only the exact net difference is debited or credited from warehouse inventory.
 function reconcileProductInventoryStock(oldInvoice, newInvoice) {
   loadAllDatabases();
   let modified = false;
@@ -2389,14 +2404,37 @@ function reconcileProductInventoryStock(oldInvoice, newInvoice) {
       const actionText = netDelta > 0 
         ? `Invoice Stock Deduction (-${netDelta} ${prod.unit || 'Units'})` 
         : `Invoice Edit Stock Reversal (+${Math.abs(netDelta)} ${prod.unit || 'Units'})`;
-      sendStockTelegramReport(prod, actionText, currentStock, newStock);
+      try { sendStockTelegramReport(prod, actionText, currentStock, newStock); } catch(e){}
     }
   });
 
   if (modified) {
     try {
+      // LocalStorage
       localStorage.setItem("products", JSON.stringify(productsDb));
-      syncDatabaseToServer("products", productsDb);
+
+      // IndexedDB persistence
+      if (typeof saveProductsToDB === "function") saveProductsToDB();
+      if (window.AaryanDB && typeof window.AaryanDB.saveProducts === "function") {
+        try { window.AaryanDB.saveProducts(productsDb); } catch(e){}
+      }
+
+      // Sync to Google Sheets master database
+      if (typeof syncDatabaseToServer === "function") {
+        syncDatabaseToServer("products", productsDb);
+      }
+
+      // Broadcast mutation across EMQX MQTT Cloud Mesh
+      if (typeof publishMeshDatabaseUpdate === "function") {
+        try { publishMeshDatabaseUpdate("productsDb", productsDb); } catch(e){}
+      }
+
+      // Re-render UI elements immediately across all tabs
+      if (typeof renderProductsTable === "function") renderProductsTable();
+      if (typeof renderProductsGrid === "function") renderProductsGrid();
+      if (typeof populateBillingSelectors === "function") populateBillingSelectors();
+      if (typeof updateDashboardStats === "function") updateDashboardStats();
+      if (typeof window.broadcastDatabaseMutation === "function") window.broadcastDatabaseMutation();
     } catch (err) {
       console.warn("Unable to save products db:", err);
     }
