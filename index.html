@@ -2032,7 +2032,10 @@
 
         <div class="modal-footer flex-row gap-10 justify-end" style="flex-shrink: 0; padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; margin: 0;">
           <button type="button" class="btn btn-secondary" onclick="closeProductModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save Product</button>
+          <button type="button" class="btn btn-outline" onclick="saveProductModal(event, true)" style="border: 1.5px solid #0284c7; color: #0284c7; font-weight: 600; background: #f0f9ff;">
+            <i class="fa-solid fa-plus"></i> Save & Add Another
+          </button>
+          <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save Product</button>
         </div>
       </form>
     </div>
@@ -2086,7 +2089,10 @@
         </div>
         <div class="modal-footer flex-row gap-10 justify-end" style="flex-shrink: 0; padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; margin: 0;">
           <button type="button" class="btn btn-secondary" onclick="closePartyModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save Profile</button>
+          <button type="button" class="btn btn-outline" onclick="savePartyModal(event, true)" style="border: 1.5px solid #0284c7; color: #0284c7; font-weight: 600; background: #f0f9ff;">
+            <i class="fa-solid fa-plus"></i> Save & Add Another
+          </button>
+          <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save Profile</button>
         </div>
       </form>
     </div>
@@ -3973,7 +3979,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=349_wa_caption_and_history_tombstone_fix"></script>
+  <script src="index_v5.js?v=350_unlimited_product_add_without_reload"></script>
 </body>
 </html>
 

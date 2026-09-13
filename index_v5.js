@@ -9259,7 +9259,11 @@ window.openBalanceQrModal = function(id) {
   }
 
   const modalEl = document.getElementById("balance-qr-modal");
-  if (modalEl) modalEl.classList.remove("hidden");
+  if (modalEl) {
+    modalEl.classList.remove("hidden");
+    modalEl.style.removeProperty("display");
+    modalEl.style.setProperty("display", "flex", "important");
+  }
 };
 
 window.closeBalanceQrModal = function() {
@@ -10065,7 +10069,23 @@ window.calculateProductModalValues = function() {
 };
 
 window.openProductModal = function(id = "") {
-  document.getElementById("modal-product-form").reset();
+  const modalEl = document.getElementById("product-modal");
+  if (!modalEl) return;
+
+  // Fully clear any inline display/visibility locks so the modal opens reliably every single time
+  modalEl.classList.remove("hidden");
+  modalEl.style.removeProperty("display");
+  modalEl.style.removeProperty("visibility");
+  modalEl.style.removeProperty("opacity");
+  modalEl.style.removeProperty("pointer-events");
+  modalEl.style.setProperty("display", "flex", "important");
+  modalEl.style.setProperty("visibility", "visible", "important");
+  modalEl.style.setProperty("opacity", "1", "important");
+  modalEl.style.setProperty("pointer-events", "auto", "important");
+  modalEl.style.setProperty("z-index", "2147483640", "important");
+
+  const form = document.getElementById("modal-product-form");
+  if (form) form.reset();
   document.getElementById("modal-prod-id").value = "";
   document.getElementById("modal-prod-unit").value = "Bucket";
   document.getElementById("modal-prod-discount").value = "0";
@@ -10125,7 +10145,10 @@ window.openProductModal = function(id = "") {
   }
 
   calculateProductModalValues();
-  document.getElementById("product-modal").classList.remove("hidden");
+  setTimeout(() => {
+    const descEl = document.getElementById("modal-prod-desc");
+    if (descEl) descEl.focus();
+  }, 100);
 };
 
 window.closeProductModal = function() {
@@ -10133,11 +10156,14 @@ window.closeProductModal = function() {
   if (modalEl) {
     modalEl.classList.add("hidden");
     modalEl.style.setProperty("display", "none", "important");
+    modalEl.style.setProperty("visibility", "hidden", "important");
+    modalEl.style.setProperty("opacity", "0", "important");
+    modalEl.style.setProperty("pointer-events", "none", "important");
   }
 };
 
-window.saveProductModal = function(e) {
-  e.preventDefault();
+window.saveProductModal = function(e, andAddAnother = false) {
+  if (e && e.preventDefault) e.preventDefault();
   const id = document.getElementById("modal-prod-id").value;
   const desc = document.getElementById("modal-prod-desc").value.toUpperCase().trim();
   const hsn = document.getElementById("modal-prod-hsn").value.trim();
@@ -10147,6 +10173,13 @@ window.saveProductModal = function(e) {
   const costPrice = parseFloat(document.getElementById("modal-prod-cost")?.value) || 0;
   const barcode = (document.getElementById("modal-prod-barcode")?.value || "").trim();
   const disc = parseFloat(document.getElementById("modal-prod-discount").value) || 0;
+
+  if (!desc) {
+    showFloatingToast("⚠️ Please enter Description of Goods.", "warning");
+    const descEl = document.getElementById("modal-prod-desc");
+    if (descEl) descEl.focus();
+    return;
+  }
 
   let oldStock = 0;
   let finalStock = 0;
@@ -10159,15 +10192,11 @@ window.saveProductModal = function(e) {
     if (currentProductStockMode === 'add') {
       const addInput = document.getElementById("modal-prod-add-stock");
       const addedQty = Math.max(0, parseInt(addInput?.value, 10) || 0);
-      // REAL WORLD BUSINESS LOGIC:
-      // If user did not enter any new stock (addedQty === 0), preserve existing stock 100%!
-      // If user entered new stock, it takes existing stock and adds new inward stock!
       finalStock = oldStock + addedQty;
       actionReportType = addedQty > 0 
         ? `Stock Inward / Restock (+${addedQty} ${unit})` 
         : `Product Details Updated (Stock Unchanged: ${oldStock} ${unit})`;
     } else {
-      // Direct Adjustment / Audit Mode
       const adjustInput = document.getElementById("modal-prod-adjust-stock");
       const setVal = adjustInput && adjustInput.value !== "" ? parseInt(adjustInput.value, 10) : oldStock;
       finalStock = Math.max(0, isNaN(setVal) ? oldStock : setVal);
@@ -10177,7 +10206,6 @@ window.saveProductModal = function(e) {
         : `Product Details Updated`;
     }
   } else {
-    // New product mode
     finalStock = Math.max(0, parseInt(document.getElementById("modal-prod-stock")?.value, 10) || 0);
     actionReportType = `New Product Added (Opening Stock: ${finalStock} ${unit})`;
   }
@@ -10187,7 +10215,7 @@ window.saveProductModal = function(e) {
 
   const productStatus = finalStock <= 0 ? "Out of Stock" : (finalStock <= 10 ? "Low Stock" : "In Stock");
   const product = { 
-    id: id || "prod-" + Date.now(), 
+    id: id || "prod-" + Date.now() + "-" + Math.floor(Math.random() * 1000), 
     description: desc, 
     hsn, 
     packSize: pack, 
@@ -10218,7 +10246,6 @@ window.saveProductModal = function(e) {
   localStorage.setItem("products", JSON.stringify(productsDb));
   if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
   
-  closeProductModal();
   renderProductsTable(productsDb);
   populateBillingSelectors();
   if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
@@ -10242,7 +10269,14 @@ window.saveProductModal = function(e) {
   const stockMsg = id && oldStock !== finalStock 
     ? `Stock updated: ${oldStock} ➔ ${finalStock} ${unit}`
     : `Stock: ${finalStock} ${unit}`;
-  showFloatingToast(`✅ "${product.description}" saved successfully! (${stockMsg})`, 3500);
+
+  if (andAddAnother) {
+    window.openProductModal("");
+    showFloatingToast(`✅ "${product.description}" saved! Ready for next product...`, 3000);
+  } else {
+    closeProductModal();
+    showFloatingToast(`✅ "${product.description}" saved successfully! (${stockMsg})`, 3500);
+  }
 
   sendStockTelegramReport(product, actionReportType, oldStock, finalStock);
 };
@@ -10812,7 +10846,23 @@ elements.searchProductsInput.addEventListener("input", () => {
 
 // --- PARTIES DIALOG MODALS & CARDS ---
 window.openPartyModal = function(type, id = "") {
-  document.getElementById("modal-party-form").reset();
+  const modalEl = document.getElementById("party-modal");
+  if (!modalEl) return;
+
+  // Fully clear any inline display/visibility locks so the modal opens reliably every single time
+  modalEl.classList.remove("hidden");
+  modalEl.style.removeProperty("display");
+  modalEl.style.removeProperty("visibility");
+  modalEl.style.removeProperty("opacity");
+  modalEl.style.removeProperty("pointer-events");
+  modalEl.style.setProperty("display", "flex", "important");
+  modalEl.style.setProperty("visibility", "visible", "important");
+  modalEl.style.setProperty("opacity", "1", "important");
+  modalEl.style.setProperty("pointer-events", "auto", "important");
+  modalEl.style.setProperty("z-index", "2147483640", "important");
+
+  const form = document.getElementById("modal-party-form");
+  if (form) form.reset();
   document.getElementById("modal-party-id").value = "";
   document.getElementById("modal-party-type").value = type;
   document.getElementById("modal-party-state").value = "Andhra Pradesh";
@@ -10836,7 +10886,10 @@ window.openPartyModal = function(type, id = "") {
     document.getElementById("party-modal-title").textContent = `Add New ${type === 'receiver' ? 'Receiver' : 'Consignee'}`;
   }
 
-  document.getElementById("party-modal").classList.remove("hidden");
+  setTimeout(() => {
+    const nameEl = document.getElementById("modal-party-name");
+    if (nameEl) nameEl.focus();
+  }, 100);
 };
 
 window.closePartyModal = function() {
@@ -10844,11 +10897,14 @@ window.closePartyModal = function() {
   if (modalEl) {
     modalEl.classList.add("hidden");
     modalEl.style.setProperty("display", "none", "important");
+    modalEl.style.setProperty("visibility", "hidden", "important");
+    modalEl.style.setProperty("opacity", "0", "important");
+    modalEl.style.setProperty("pointer-events", "none", "important");
   }
 };
 
-window.savePartyModal = function(e) {
-  e.preventDefault();
+window.savePartyModal = function(e, andAddAnother = false) {
+  if (e && e.preventDefault) e.preventDefault();
   const id = document.getElementById("modal-party-id").value;
   const type = document.getElementById("modal-party-type").value;
   const name = document.getElementById("modal-party-name").value.toUpperCase().trim();
@@ -10859,7 +10915,25 @@ window.savePartyModal = function(e) {
   const stateCode = document.getElementById("modal-party-state-code").value.trim();
   const phone = document.getElementById("modal-party-phone").value.trim();
 
-  const party = { id: id || "party-" + Date.now(), type, name, company, address, gstin, state, stateCode, phone, updatedAt: new Date().toISOString() };
+  if (!name) {
+    showFloatingToast("⚠️ Please enter Customer Name.", "warning");
+    const nameEl = document.getElementById("modal-party-name");
+    if (nameEl) nameEl.focus();
+    return;
+  }
+
+  const party = { 
+    id: id || "party-" + Date.now() + "-" + Math.floor(Math.random() * 1000), 
+    type, 
+    name, 
+    company, 
+    address, 
+    gstin, 
+    state, 
+    stateCode, 
+    phone, 
+    updatedAt: new Date().toISOString() 
+  };
   const isNew = !id;
 
   if (id) {
@@ -10875,7 +10949,6 @@ window.savePartyModal = function(e) {
   localStorage.setItem("parties", JSON.stringify(partiesDb));
   if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllParties(partiesDb);
   
-  closePartyModal();
   loadPartiesDatabaseLists();
   populateBillingSelectors();
 
@@ -10884,6 +10957,14 @@ window.savePartyModal = function(e) {
 
   // Direct Push to Google Cloud Database (< 1s)
   pushDirectToGoogleDatabase("save_parties", { parties: partiesDb });
+
+  if (andAddAnother) {
+    window.openPartyModal(type, "");
+    showFloatingToast(`✅ "${party.name}" saved! Ready for next ${type === 'receiver' ? 'Receiver' : 'Consignee'}...`, 3000);
+  } else {
+    closePartyModal();
+    showFloatingToast(`✅ "${party.name}" saved successfully!`, 3500);
+  }
 
   sendPartyTelegramReport(party, isNew);
 };
