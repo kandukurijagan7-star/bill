@@ -626,22 +626,49 @@ function writeInvoiceToSheet(inv, ss) {
 }
 
 function deleteInvoiceFromSheet(delId, ss) {
+  if (!delId) return false;
   if (!ss) ss = getMasterSpreadsheet();
   var sheet = ss.getSheetByName("Invoices");
   if (!sheet || sheet.getLastRow() < 2) return false;
 
   var lastRow = sheet.getLastRow();
-  var idVals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  var target = String(delId).trim();
+  var numCols = Math.min(sheet.getLastColumn(), 15);
+  var values = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+  var targetStr = String(delId).trim().toLowerCase();
+  var cleanTarget = targetStr.replace(/^#/, '').replace(/^inv_/, '');
+  var numTarget = parseInt(cleanTarget, 10);
+  var deletedAny = false;
 
-  for (var r = idVals.length - 1; r >= 0; r--) {
-    var cellVal = String(idVals[r][0]).trim();
-    if (cellVal === target) {
+  for (var r = values.length - 1; r >= 0; r--) {
+    var row = values[r];
+    var cellVal = String(row[0] || "").trim().toLowerCase();
+    var cleanCell = cellVal.replace(/^#/, '').replace(/^inv_/, '');
+    var numCell = parseInt(cleanCell, 10);
+    var rawJson = row[14] ? String(row[14]).trim() : "";
+
+    var match = false;
+    if (cellVal === targetStr || cleanCell === cleanTarget) match = true;
+    if (!isNaN(numTarget) && !isNaN(numCell) && numTarget === numCell) match = true;
+    if (cellVal === "inv_" + cleanTarget || cellVal === "inv_" + numTarget) match = true;
+
+    // Check raw JSON payload in column 15
+    if (!match && rawJson) {
+      if (rawJson.indexOf(delId) !== -1 || rawJson.indexOf('"' + cleanTarget + '"') !== -1) {
+        try {
+          var j = JSON.parse(rawJson);
+          if (j.id == delId || j.invoiceNo == delId || j.invoiceNo == cleanTarget) {
+            match = true;
+          }
+        } catch(e) {}
+      }
+    }
+
+    if (match) {
       sheet.deleteRow(r + 2);
-      return true;
+      deletedAny = true;
     }
   }
-  return false;
+  return deletedAny;
 }
 
 // --- INVENTORY CRUD FROM AUTHORITATIVE GOOGLE SHEET ---
@@ -1010,6 +1037,16 @@ function processDeleteRecord(type, id, user, ss) {
       var targetNo = targetInv ? (targetInv.invoiceNo || id) : id;
       deleteInvoiceFromSheet(targetNo, ss);
       deleteInvoiceFromSheet(id, ss);
+      if (targetNo) {
+        deleteInvoiceFromSheet(String(targetNo).replace(/^#/, ''), ss);
+        var tNum = parseInt(String(targetNo).replace(/^#/, ''), 10);
+        if (!isNaN(tNum)) deleteInvoiceFromSheet(String(tNum), ss);
+      }
+      if (id) {
+        deleteInvoiceFromSheet(String(id).replace(/^inv_/, ''), ss);
+        var idNum = parseInt(String(id).replace(/^inv_/, ''), 10);
+        if (!isNaN(idNum)) deleteInvoiceFromSheet(String(idNum), ss);
+      }
 
       try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (e) {}
 
@@ -1185,6 +1222,11 @@ function handleApiPost(e) {
     if (action === "delete_record") {
       var delType = data.type || data.recordType;
       var delId = data.id || data.recordId;
+      var delNo = data.invoiceNo || data.no;
+      if (delNo && delType === "invoice") {
+        deleteInvoiceFromSheet(delNo, ss);
+        deleteInvoiceFromSheet(String(delNo).replace(/^#/, ''), ss);
+      }
       var delRes = processDeleteRecord(delType, delId, user, ss);
       return ContentService.createTextOutput(JSON.stringify(delRes)).setMimeType(ContentService.MimeType.JSON);
     }

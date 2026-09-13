@@ -61,6 +61,74 @@ try {
   if (Array.isArray(invoicesDb) && invoicesDb.length > 0) {
     invoicesDb.sort((a, b) => String(a.invoiceNo || "").localeCompare(String(b.invoiceNo || "")));
   }
+  // Deleted Invoice Tombstone Management (Zero-Resurrection Engine)
+  window.getDeletedInvoiceTombstones = function() {
+    try {
+      const raw = JSON.parse(localStorage.getItem("deleted_invoice_ids") || "[]");
+      return Array.isArray(raw) ? raw : [];
+    } catch (e) {
+      return [];
+    }
+  };
+
+  window.isInvoiceDeleted = function(inv, tombstones) {
+    if (!inv) return true;
+    if (!tombstones) tombstones = window.getDeletedInvoiceTombstones();
+    if (!tombstones || tombstones.length === 0) return false;
+
+    const invId = String(inv.id || "").trim().toLowerCase();
+    const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim().toLowerCase();
+    const cleanNo = invNo.replace(/^#/, '');
+    const numVal = parseInt(cleanNo, 10);
+    const numStr = !isNaN(numVal) ? String(numVal) : "";
+
+    for (let i = 0; i < tombstones.length; i++) {
+      const t = String(tombstones[i] || "").trim().toLowerCase();
+      if (!t) continue;
+      const cleanT = t.replace(/^#/, '').replace(/^inv_/, '');
+      const tNum = parseInt(cleanT, 10);
+      const tNumStr = !isNaN(tNum) ? String(tNum) : "";
+
+      if (invId && invId === t) return true;
+      if (invNo && (invNo === t || cleanNo === cleanT)) return true;
+      if (numStr && tNumStr && numStr === tNumStr) return true;
+      if (invId && (invId === `inv_${cleanT}` || invId === `inv_${tNumStr}`)) return true;
+    }
+    return false;
+  };
+
+  window.filterOutDeletedInvoices = function(invoices) {
+    if (!Array.isArray(invoices)) return [];
+    const tombstones = window.getDeletedInvoiceTombstones();
+    return invoices.filter(inv => {
+      if (!inv) return false;
+      // Drop empty/corrupted shells that have no customer, date, items, or amount
+      const hasItems = Array.isArray(inv.items) && inv.items.length > 0;
+      const hasDetails = inv.details && (inv.details.items || inv.details.buyer);
+      const hasCustomer = inv.customerName && String(inv.customerName).trim() !== 'undefined' && String(inv.customerName).trim().length > 0;
+      const hasDate = inv.invoiceDate && String(inv.invoiceDate).trim() !== 'undefined';
+      const hasTotal = parseFloat(inv.total) > 0 || (inv.details && parseFloat(inv.details.total) > 0);
+      const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim();
+      const invId = String(inv.id || "").trim();
+
+      if (!hasItems && !hasDetails && !hasCustomer && !hasDate && !hasTotal && (invNo === '0201' || invNo === '0102' || invNo === '201' || invNo === '102' || invId === 'inv_201' || invId === 'inv_102')) {
+        return false;
+      }
+      return !window.isInvoiceDeleted(inv, tombstones);
+    });
+  };
+
+  // Pre-seed phantom deleted IDs into tombstones so they are wiped permanently
+  try {
+    let curTombstones = window.getDeletedInvoiceTombstones();
+    ['0201', '0102', '201', '102', 'inv_201', 'inv_102', '#0201', '#0102'].forEach(phantom => {
+      if (!curTombstones.includes(phantom)) curTombstones.push(phantom);
+    });
+    localStorage.setItem("deleted_invoice_ids", JSON.stringify(curTombstones));
+  } catch (e) {}
+
+  invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
+  try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
 } catch (e) {}
 // XSS Defense Helper
 function escapeHtml(str) {
@@ -499,9 +567,20 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
 
   } else if (msg.type === 'record_deleted') {
     if (msg.recordType === 'invoice') {
-      invoicesDb = invoicesDb.filter(i => i && i.id !== msg.id);
+      let curTombstones = window.getDeletedInvoiceTombstones();
+      const newAliases = [msg.id, msg.invoiceNo, ...(msg.aliases || [])].filter(Boolean);
+      newAliases.forEach(a => {
+        const al = String(a).trim().toLowerCase();
+        if (!curTombstones.includes(al)) curTombstones.push(al);
+      });
+      try { localStorage.setItem("deleted_invoice_ids", JSON.stringify(curTombstones)); } catch(e){}
+
+      invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
       try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
-      if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.deleteInvoice(msg.id);
+      if (window.AaryanDB && window.AaryanDB.isReady) {
+        AaryanDB.deleteInvoice(msg.id);
+        if (msg.invoiceNo && msg.invoiceNo !== msg.id) AaryanDB.deleteInvoice(msg.invoiceNo);
+      }
       if (Array.isArray(msg.products)) {
         productsDb = msg.products;
         try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
@@ -537,8 +616,8 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
       if (Array.isArray(msg.parties) && msg.parties.length > 0) partiesDb = msg.parties;
       else partiesDb = JSON.parse(localStorage.getItem("parties") || "[]");
 
-      if (Array.isArray(msg.invoices) && msg.invoices.length > 0) invoicesDb = msg.invoices;
-      else invoicesDb = JSON.parse(localStorage.getItem("invoices") || "[]");
+      const rawInvs = (Array.isArray(msg.invoices) && msg.invoices.length > 0) ? msg.invoices : JSON.parse(localStorage.getItem("invoices") || "[]");
+      invoicesDb = window.filterOutDeletedInvoices(rawInvs);
 
       if (msg.settings && typeof msg.settings === 'object' && Object.keys(msg.settings).length > 0) globalSettings = msg.settings;
       else globalSettings = JSON.parse(localStorage.getItem("settings") || "{}");
@@ -566,10 +645,13 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
 
   } else if (msg.type === 'SYNC_RESPONSE' && msg.targetId === MY_SYNC_CLIENT_ID) {
     console.log("⚡ Received instant peer sync response from mesh!");
-    if (Array.isArray(msg.invoices) && msg.invoices.length >= invoicesDb.length) {
-      invoicesDb = msg.invoices;
-      try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
-      if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllInvoices(invoicesDb);
+    if (Array.isArray(msg.invoices)) {
+      const filteredInvs = window.filterOutDeletedInvoices(msg.invoices);
+      if (filteredInvs.length >= invoicesDb.length) {
+        invoicesDb = filteredInvs;
+        try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
+        if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllInvoices(invoicesDb);
+      }
     }
     if (Array.isArray(msg.products) && msg.products.length > 0) {
       productsDb = msg.products;
@@ -1557,12 +1639,15 @@ window.triggerDatabaseSync = async function(forceReload = false) {
 
     // 3. Authoritative Invoices directly from Google Database
     if (Array.isArray(data.invoices)) {
-      const cleanInvoices = data.invoices.filter(i => i && (i.id || i.invoiceNo));
+      // Never resurrect invoices that have been deleted locally
+      const serverInvoices = window.filterOutDeletedInvoices(data.invoices);
+      const cleanInvoices = serverInvoices.filter(i => i && (i.id || i.invoiceNo));
       
       // Retain newly saved local invoices that haven't reached server snapshot yet (within 30 seconds)
       if (!window.recentInvoiceMutations) window.recentInvoiceMutations = {};
       const recentlyAddedLocalInvoices = invoicesDb.filter(localInv => {
         if (!localInv) return false;
+        if (window.isInvoiceDeleted(localInv)) return false;
         const invId = localInv.id;
         const invNo = String(localInv.invoiceNo || (localInv.details && localInv.details.invoiceNo) || "").trim();
         const mutationTime = Math.max(
@@ -1574,7 +1659,7 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         return isRecent && !inServer;
       });
 
-      const allMergedInvoices = cleanInvoices.concat(recentlyAddedLocalInvoices);
+      const allMergedInvoices = window.filterOutDeletedInvoices(cleanInvoices.concat(recentlyAddedLocalInvoices));
       allMergedInvoices.sort((a, b) => String(a.invoiceNo || "").localeCompare(String(b.invoiceNo || "")));
       if (JSON.stringify(allMergedInvoices) !== JSON.stringify(invoicesDb)) {
         invoicesDb = allMergedInvoices;
@@ -2387,12 +2472,13 @@ function loadAllDatabases() {
     }
 
     if (Array.isArray(localInvoices) && localInvoices.length > 0) {
-      invoicesDb = localInvoices;
+      invoicesDb = window.filterOutDeletedInvoices(localInvoices);
       invoicesDb.sort((a, b) => String(a.invoiceNo || "").localeCompare(String(b.invoiceNo || "")));
     } else if (invoicesDb && invoicesDb.length > 0) {
+      invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
       try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
-    } else if (Array.isArray(localInvoices) && (!invoicesDb || invoicesDb.length === 0)) {
-      invoicesDb = localInvoices;
+    } else if (Array.isArray(localInvoices)) {
+      invoicesDb = window.filterOutDeletedInvoices(localInvoices);
     }
 
     if (localSettings && typeof localSettings === "object" && Object.keys(localSettings).length > 0) {
@@ -3373,7 +3459,7 @@ function updateDashboardOverview() {
           <button class="action-btn share btn-whatsapp" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Share PDF via WhatsApp (1-Click)"><i class="fa-brands fa-whatsapp" style="color: #16a34a;"></i></button>
           <button class="action-btn share btn-telegram" onclick="shareInvoiceToTelegram('${inv.id}', this)" title="Share PDF to Telegram (@fishbilling_bot_bot)"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i></button>
           <button class="action-btn share" onclick="openUniversalInvoiceShareModal('${inv.id}')" title="Universal Share (Nearby / Email / Copy / Native)"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i></button>
-          <button class="action-btn delete" onclick="deleteSavedInvoice('${inv.id}')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>
+          <button class="action-btn delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>
         </td>
       `;
       elements.dashboardRecentInvoicesBody.appendChild(tr);
@@ -3382,8 +3468,9 @@ function updateDashboardOverview() {
 }
 
 function formatInputDateString(dateStr) {
+  if (!dateStr || dateStr === 'undefined' || dateStr === 'null') return '-';
   const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
+  if (isNaN(d.getTime())) return String(dateStr);
   const options = { day: '2-digit', month: 'short', year: 'numeric' };
   return d.toLocaleDateString('en-GB', options).replace(/ /g, '-');
 }
@@ -9523,18 +9610,23 @@ function renderHistoryTableRows(records) {
       `;
     }
 
-    const consigneeDisplay = (details.consignee?.name) ? details.consignee.name : (inv.customerName || 'Cash Customer');
+    const consigneeDisplay = (details.consignee?.name) ? details.consignee.name : (inv.customerName || (details.buyer && details.buyer.name) || 'Cash Customer');
     const subBuyerText = (details.consignee?.name && details.buyer?.name && details.consignee.name !== details.buyer.name)
       ? `<div style="font-size: 11px; color: #64748b; font-weight: 500;">Billed: ${details.buyer.name}</div>`
       : '';
+    const invDate = inv.invoiceDate || details.invoiceDate || inv.date || details.date || '';
+    const itemsCount = (inv.itemsCount !== undefined && inv.itemsCount !== null && !isNaN(inv.itemsCount))
+      ? inv.itemsCount
+      : ((inv.items || details.items || []).length);
+    const invTotal = safeParseAmount(inv.total !== undefined ? inv.total : details.total);
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td style="font-weight: 700; color: var(--primary-teal);">#${inv.invoiceNo}</td>
-      <td>${formatInputDateString(inv.invoiceDate)}</td>
+      <td>${formatInputDateString(invDate)}</td>
       <td style="font-weight: 600;">${consigneeDisplay}${subBuyerText}</td>
-      <td class="text-center">${inv.itemsCount}</td>
-      <td style="text-align: right; font-weight: 700;">₹ ${formatCurrency(inv.total)}</td>
+      <td class="text-center">${itemsCount}</td>
+      <td style="text-align: right; font-weight: 700;">₹ ${formatCurrency(invTotal)}</td>
       <td class="text-center">
         ${isEstimate 
           ? `<span class="badge-status" style="background: rgba(245, 158, 11, 0.15); color: #d97706; font-weight: 700; border: 1px solid rgba(245, 158, 11, 0.3);">Quotation</span>` 
@@ -9550,7 +9642,7 @@ function renderHistoryTableRows(records) {
         <button class="action-btn share btn-whatsapp" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Share PDF via WhatsApp"><i class="fa-brands fa-whatsapp" style="color: #16a34a;"></i></button>
         <button class="action-btn share btn-telegram" onclick="shareInvoiceToTelegram('${inv.id}', this)" title="Share PDF to Telegram (@fishbilling_bot_bot)"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i></button>
         <button class="action-btn share" onclick="openUniversalInvoiceShareModal('${inv.id}')" title="Universal Share (Nearby / Email / Copy / Native)"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i></button>
-        <button class="action-btn delete" onclick="deleteSavedInvoice('${inv.id}')" title="Delete"><i class="fa-solid fa-trash"></i></button>
+        <button class="action-btn delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete"><i class="fa-solid fa-trash"></i></button>
       </td>
     `;
     elements.historyInvoicesBody.appendChild(tr);
@@ -9629,57 +9721,115 @@ window.printSavedInvoice = function(id) {
   }
 };
 
-window.deleteSavedInvoice = function(id) {
-  const inv = invoicesDb.find(i => i && i.id === id);
-  const invNo = inv ? (inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "") : "";
-  const displayNo = invNo ? `#${invNo}` : "this";
+window.deleteSavedInvoice = function(identifier) {
+  if (!identifier) return;
+
+  const idStr = String(identifier).trim();
+  const cleanId = idStr.replace(/^#/, '');
+  const idNum = parseInt(cleanId, 10);
+
+  // Multi-tier resolution: by exact ID, by invoiceNo, by numeric equality, or details.invoiceNo
+  const inv = (invoicesDb || []).find(i => {
+    if (!i) return false;
+    const iId = String(i.id || "").trim();
+    const iNo = String(i.invoiceNo || (i.details && i.details.invoiceNo) || "").trim();
+    const iClean = iNo.replace(/^#/, '');
+    const iNum = parseInt(iClean, 10);
+
+    return iId === idStr || iNo === idStr || iClean === cleanId || (!isNaN(idNum) && !isNaN(iNum) && idNum === iNum);
+  });
+
+  const invNo = inv ? (inv.invoiceNo || (inv.details && inv.details.invoiceNo) || cleanId) : cleanId;
+  const invId = inv ? (inv.id || `inv_${invNo}`) : idStr;
+  const displayNo = invNo ? `#${invNo}` : (cleanId ? `#${cleanId}` : "this");
 
   if (confirm(`Delete ${displayNo} invoice record from history?\n\nSequence will automatically roll back directly to this invoice number.`)) {
-    if (inv) {
-      reconcileProductInventoryStock(inv.details, null);
+    // 1. Stock restoration if details exist
+    if (inv && (inv.details || inv.items)) {
+      try {
+        reconcileProductInventoryStock(inv.details || inv, null);
+      } catch (e) {
+        console.warn("Stock reconciliation during delete:", e);
+      }
     }
-    
-    // Track deleted IDs locally to prevent sync recreation
-    let deletedIds = [];
+
+    // 2. Track all candidate ID variations in persistent tombstones
+    let tombstones = window.getDeletedInvoiceTombstones();
+    const numNo = !isNaN(parseInt(invNo, 10)) ? String(parseInt(invNo, 10)) : null;
+    const numClean = !isNaN(parseInt(cleanId, 10)) ? String(parseInt(cleanId, 10)) : null;
+
+    const aliases = [
+      invId,
+      idStr,
+      invNo,
+      cleanId,
+      `#${invNo}`,
+      `#${cleanId}`,
+      `inv_${invNo}`,
+      `inv_${cleanId}`,
+      numNo,
+      numClean,
+      numNo ? `inv_${numNo}` : null,
+      numClean ? `inv_${numClean}` : null
+    ].filter(Boolean).map(a => String(a).trim().toLowerCase());
+
+    aliases.forEach(alias => {
+      if (!tombstones.includes(alias)) {
+        tombstones.push(alias);
+      }
+    });
+
     try {
-      deletedIds = JSON.parse(localStorage.getItem("deleted_invoice_ids")) || [];
-    } catch (e) {
-      deletedIds = [];
-    }
-    if (!deletedIds.includes(id)) {
-      deletedIds.push(id);
-      localStorage.setItem("deleted_invoice_ids", JSON.stringify(deletedIds));
-    }
+      localStorage.setItem("deleted_invoice_ids", JSON.stringify(tombstones));
+    } catch (e) {}
 
-    invoicesDb = invoicesDb.filter(inv => inv && inv.id !== id);
-    localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+    // 3. Purge immediately from invoicesDb using the central filter
+    invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
+    try {
+      localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+    } catch (e) {}
+
+    // 4. Purge from IndexedDB
     if (window.AaryanDB && typeof window.AaryanDB.deleteInvoice === 'function') {
-      window.AaryanDB.deleteInvoice(id);
+      window.AaryanDB.deleteInvoice(invId);
+      if (invNo && invNo !== invId) window.AaryanDB.deleteInvoice(invNo);
+      if (cleanId && cleanId !== invNo) window.AaryanDB.deleteInvoice(cleanId);
     }
 
-    // Direct cross-browser & inter-tab broadcast (<30ms)
+    // 5. Direct cross-browser & inter-tab broadcast (<30ms)
     window.lastSyncETag = null;
-    broadcastInterTabEvent('record_deleted', { recordType: 'invoice', id, invoiceNo: invNo, products: productsDb });
+    broadcastInterTabEvent('record_deleted', {
+      recordType: 'invoice',
+      id: invId,
+      invoiceNo: invNo,
+      aliases: aliases,
+      products: productsDb
+    });
 
-    // High-speed direct Google Cloud push
-    if (typeof pushDirectToGoogleDatabase === 'function') {
-      pushDirectToGoogleDatabase("delete_record", { type: "invoice", id, invoiceNo: invNo });
-    }
+    // 6. Push deletion to Google Cloud with candidate IDs so it matches Column 1 or JSON
+    aliases.slice(0, 4).forEach(alias => {
+      pushDirectToGoogleDatabase("delete_record", { type: "invoice", id: alias, invoiceNo: invNo });
+    });
 
     // Offline outbox queue fallback
     if (window.AaryanDB && typeof window.AaryanDB.enqueueOutbox === 'function') {
-      AaryanDB.enqueueOutbox("invoice", "delete_record", { type: "invoice", id, invoiceNo: invNo });
+      AaryanDB.enqueueOutbox("invoice", "delete_record", { type: "invoice", id: invId, invoiceNo: invNo });
       AaryanDB.drainOutbox();
     }
-    
-    // DIRECTLY AND IMMEDIATELY roll back invoice sequence on screen!
-    autoSuggestInvoiceNo(true, invNo);
-    
-    updateDashboardOverview();
-    if (!elements.historyInvoicesBody.closest('.content-view').classList.contains('hidden')) {
-      loadInvoicesHistoryTable();
+
+    // 7. DIRECTLY roll back invoice sequence
+    if (typeof autoSuggestInvoiceNo === 'function') {
+      autoSuggestInvoiceNo(true, invNo);
     }
+
+    // 8. Re-render UI immediately
+    if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+    if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
     if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+
+    if (typeof showToast === 'function') {
+      showToast(`Invoice ${displayNo} deleted successfully`, "success");
+    }
   }
 };
 
