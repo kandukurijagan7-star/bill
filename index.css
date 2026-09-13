@@ -6910,8 +6910,19 @@ body {
 }
 
 /* ==========================================================================
-   DASHBOARD SCREEN-FIT & COMPACT RESPONSIVE ARCHITECTURE
+   DYNAMIC UNIVERSAL SCREEN-FIT ARCHITECTURE FOR DASHBOARD (#view-dashboard)
    ========================================================================== */
+
+#view-dashboard.hidden,
+.content-view.hidden,
+section.content-view.hidden {
+  display: none !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
 
 .chart-canvas-container {
   height: 180px;
@@ -6920,14 +6931,8 @@ body {
   box-sizing: border-box;
 }
 
-/* ==========================================================================
-   DYNAMIC UNIVERSAL SCREEN-FIT ARCHITECTURE FOR DASHBOARD (#view-dashboard)
-   Automatically & Dynamically Fits Exact Screen Viewport (100vh / 100dvh)
-   Zero whole-page overflow, zero cut-off cards, fully responsive
-   ========================================================================== */
-
 @media (min-width: 901px) {
-  #view-dashboard.content-view {
+  #view-dashboard.content-view:not(.hidden) {
     height: calc(100vh - 56px) !important;
     height: calc(100dvh - 56px) !important;
     max-height: calc(100vh - 56px) !important;
@@ -7114,7 +7119,7 @@ body {
 }
 
 /* Optional Scroll View Mode (Only when user explicitly toggles to standard document scroll) */
-#view-dashboard.dashboard-scroll-mode {
+#view-dashboard.dashboard-scroll-mode:not(.hidden) {
   height: auto !important;
   max-height: none !important;
   overflow-y: auto !important;
