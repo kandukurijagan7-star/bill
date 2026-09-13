@@ -630,10 +630,17 @@ window.addEventListener('storage', (e) => {
   } catch (err) {}
 });
 
-// 3. Cross-Browser & Multi-Device High-Speed Real-Time Mesh (EMQX / HiveMQ < 30ms)
+// 3. Cross-Browser & Multi-Device High-Speed Real-Time Mesh (EMQX < 30ms)
+let consecutiveBrokerErrors = 0;
 function initRealtimeMeshSync() {
   if (typeof mqtt === 'undefined') {
-    console.warn("MQTT library not ready, using local companion & cloud fallback.");
+    if (!window._mqttRetryCount) window._mqttRetryCount = 0;
+    window._mqttRetryCount++;
+    if (window._mqttRetryCount <= 50) {
+      setTimeout(initRealtimeMeshSync, 200);
+    } else {
+      console.warn("MQTT library not ready, using local companion & cloud fallback.");
+    }
     return;
   }
 
@@ -656,11 +663,14 @@ function initRealtimeMeshSync() {
     });
 
     realtimeMeshClient.on('connect', () => {
+      consecutiveBrokerErrors = 0;
+      currentBrokerIdx = 0; // Always anchor back to primary high-speed cluster
       console.log(`⚡ High-Speed Cross-User Mesh Active via ${activeBrokerName}!`);
       realtimeMeshClient.subscribe(SYNC_MESH_TOPIC, { qos: 0 });
       realtimeMeshClient.subscribe('aaryan_aqua_gst_billing_2026/whatsapp_status', { qos: 0 });
       // Announce presence and request state from any active peer
       broadcastInterTabEvent('SYNC_REQUEST', { requesterId: MY_SYNC_CLIENT_ID });
+      if (typeof window.updateRealtimePresenceHUD === 'function') window.updateRealtimePresenceHUD("live");
     });
 
     realtimeMeshClient.on('message', (topic, message) => {
@@ -688,24 +698,27 @@ function initRealtimeMeshSync() {
 
     realtimeMeshClient.on('error', (err) => {
       console.warn(`Mesh broker note (${brokerUrl}):`, err.message);
-      rotateMeshBroker();
+      consecutiveBrokerErrors++;
+      if (consecutiveBrokerErrors >= 6) {
+        rotateMeshBroker();
+      }
     });
 
     realtimeMeshClient.on('close', () => {
-      if (!meshReconnectTimer) {
-        meshReconnectTimer = setTimeout(() => {
-          meshReconnectTimer = null;
-          rotateMeshBroker();
-        }, 1500);
-      }
+      if (typeof window.updateRealtimePresenceHUD === 'function') window.updateRealtimePresenceHUD("syncing");
+      // Keep same broker across temporary mobile sleep/disconnect so devices never partition
     });
   } catch (err) {
     console.warn("Real-time mesh init note:", err.message);
-    rotateMeshBroker();
+    consecutiveBrokerErrors++;
+    if (consecutiveBrokerErrors >= 6) {
+      rotateMeshBroker();
+    }
   }
 }
 
 function rotateMeshBroker() {
+  consecutiveBrokerErrors = 0;
   currentBrokerIdx = (currentBrokerIdx + 1) % MESH_BROKERS.length;
   console.log(`Switching real-time mesh to next broker: ${MESH_BROKERS[currentBrokerIdx]}`);
   setTimeout(initRealtimeMeshSync, 1000);
@@ -9181,6 +9194,15 @@ window.saveProductModal = function(e) {
   if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
 
   // Instant Cross-Browser Broadcast (< 15ms)
+  broadcastInterTabEvent('PRODUCT_STOCK_CHANGED', {
+    productId: product.id,
+    stock: product.stock,
+    status: product.status,
+    delta: id ? (finalStock - oldStock) : finalStock,
+    totalValue: product.totalValue,
+    updatedAt: product.updatedAt,
+    description: product.description
+  });
   broadcastInterTabEvent('products_saved', { products: productsDb });
 
   // Direct Push to Google Cloud Database (< 1s)

@@ -17,7 +17,12 @@
   <!-- Chart.js Library -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- High-Speed Real-Time Sync Mesh (<30ms Cross-Browser Data Transfer) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.5/mqtt.min.js"></script>
+  <script src="mqtt.min.js"></script>
+  <script>
+    if (typeof mqtt === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.5/mqtt.min.js"><\/script>');
+    }
+  </script>
   <!-- PWA Manifest & Mobile Meta -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#06b6d4">
@@ -3799,7 +3804,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=334_subsecond_realtime_mesh_sync"></script>
+  <script src="index_v5.js?v=336_anchored_mesh_subsecond_sync"></script>
 </body>
 </html>
 
