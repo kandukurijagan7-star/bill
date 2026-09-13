@@ -752,20 +752,7 @@ const AaryanDB = {
       }
 
       if (Array.isArray(prodReq.result) && prodReq.result.length > 0) {
-        const hasOutdated = prodReq.result.some(p => p && (p.discount === 42.5 || (p.id === "prod-1" && p.discount !== 45)));
-        if (hasOutdated) {
-          prodReq.result.forEach(p => {
-            if (p && p.id === "prod-1" && (p.discount === 42.5 || p.isSeed || p.discount !== 45)) {
-              p.discount = 45;
-              p.stock = 130;
-              p.rate = 3600;
-              p.updatedAt = "2020-01-01T00:00:00.000Z";
-              p.isSeed = true;
-            }
-          });
-          this.saveAllProducts(prodReq.result);
-        }
-        if (!productsDb || productsDb.length < prodReq.result.length || hasOutdated) {
+        if (!productsDb || productsDb.length < prodReq.result.length) {
           productsDb = prodReq.result;
           try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e) {}
         }
@@ -1673,22 +1660,31 @@ function initializeApp() {
     return;
   }
 
-  // Active migration: Ensure prod-1 has discount 45% and stock 127 in all browsers
+  // Auto-reconciliation: Ensure prod-1 reflects actual remaining stock (19 units after Invoice #0020 deduction of 108 units)
   try {
     const rawProds = localStorage.getItem("products");
     if (rawProds) {
       const parsedProds = JSON.parse(rawProds);
-      if (Array.isArray(parsedProds) && parsedProds.some(p => p && (p.discount === 42.5 || (p.id === "prod-1" && (p.discount !== 45 || p.stock < 124))))) {
+      if (Array.isArray(parsedProds)) {
+        let changedStock = false;
         parsedProds.forEach(p => {
           if (p && p.id === "prod-1") {
             p.discount = 45.0;
-            p.stock = 127;
             p.rate = 3600.0;
-            p.updatedAt = "2020-01-01T00:00:00.000Z";
-            p.isSeed = true;
+            delete p.isSeed;
+            if (p.stock === 127) {
+              p.stock = 19;
+              p.updatedAt = new Date().toISOString();
+              changedStock = true;
+            }
           }
         });
-        localStorage.setItem("products", JSON.stringify(parsedProds));
+        if (changedStock) {
+          localStorage.setItem("products", JSON.stringify(parsedProds));
+          if (typeof pushDirectToGoogleDatabase === "function") {
+            try { pushDirectToGoogleDatabase("save_products", { products: parsedProds }); } catch(e){}
+          }
+        }
       }
     }
   } catch (e) {}
@@ -2121,9 +2117,8 @@ function loadAllDatabases() {
         rate: 3600,
         gstRate: 5,
         discount: 45,
-        stock: 127,
-        updatedAt: "2020-01-01T00:00:00.000Z",
-        isSeed: true
+        stock: 19,
+        updatedAt: new Date().toISOString()
       },
       {
         id: "prod-2",
@@ -2135,8 +2130,7 @@ function loadAllDatabases() {
         gstRate: 5,
         discount: 10,
         stock: 100,
-        updatedAt: "2020-01-01T00:00:00.000Z",
-        isSeed: true
+        updatedAt: new Date().toISOString()
       },
       {
         id: "prod-3",
@@ -2148,21 +2142,9 @@ function loadAllDatabases() {
         gstRate: 12,
         discount: 5,
         stock: 100,
-        updatedAt: "2020-01-01T00:00:00.000Z",
-        isSeed: true
+        updatedAt: new Date().toISOString()
       }
     ];
-    try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
-  } else if (Array.isArray(productsDb) && productsDb.some(p => p && (p.discount === 42.5 || (p.id === "prod-1" && p.discount !== 45)))) {
-    productsDb.forEach(p => {
-      if (p && p.id === "prod-1" && (p.discount === 42.5 || p.isSeed || p.discount !== 45)) {
-        p.discount = 45;
-        p.stock = 127;
-        p.rate = 3600;
-        p.updatedAt = "2020-01-01T00:00:00.000Z";
-        p.isSeed = true;
-      }
-    });
     try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
   }
 
