@@ -220,6 +220,7 @@ const elements = {
   statTotalAmount: document.getElementById('stat-total-amount'),
   statTotalProducts: document.getElementById('stat-total-products'),
   statTotalParties: document.getElementById('stat-total-parties'),
+  statSettlementRate: document.getElementById('stat-settlement-rate'),
   dashboardRecentInvoicesBody: document.getElementById('dashboard-recent-invoices-body')
 };
 
@@ -3209,6 +3210,8 @@ function updateDashboardOverview() {
     if (sc) sc.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 16px;"></i>`;
     const sb = document.getElementById("stat-total-balance");
     if (sb) sb.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 16px;"></i>`;
+    const ss = document.getElementById("stat-settlement-rate");
+    if (ss) ss.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 16px;"></i>`;
   } else {
     if (elements.statTotalInvoices) elements.statTotalInvoices.textContent = invoicesDb.length;
     let totalRevenue = 0;
@@ -3281,6 +3284,18 @@ function updateDashboardOverview() {
     const profitPctEl = document.getElementById("stat-profit-pct");
     if (profitStatEl) profitStatEl.textContent = '₹ ' + formatCurrency(estProfit);
     if (profitPctEl) profitPctEl.textContent = `${profitPct}%`;
+
+    // 8th Stat: Settlement & Recovery Rate
+    const settlementRate = totalRevenue > 0 ? ((totalCollected / totalRevenue) * 100).toFixed(1) : "100.0";
+    const statSettlementRateEl = document.getElementById("stat-settlement-rate");
+    const statSettlementSubEl = document.getElementById("stat-settlement-sub");
+    if (statSettlementRateEl) {
+      statSettlementRateEl.textContent = `${settlementRate}%`;
+      statSettlementRateEl.title = `Collection Efficiency: ${settlementRate}% (₹ ${formatCurrency(totalCollected)} / ₹ ${formatCurrency(totalRevenue)})`;
+    }
+    if (statSettlementSubEl) {
+      statSettlementSubEl.textContent = totalBalanceDue <= 0.01 ? "All Settled ✅" : `${settlementRate}% Recovered`;
+    }
   }
 
   if (elements.statTotalProducts) elements.statTotalProducts.textContent = (productsDb || []).length;
@@ -13974,4 +13989,61 @@ document.addEventListener("scroll", function(e) {
 // Global Dashboard Synchronization Aliases
 window.updateDashboardOverview = updateDashboardOverview;
 window.updateDashboardStats = updateDashboardOverview;
+
+// Auto Screen-Fit Controller & Toggle for Dashboard
+window.toggleDashboardScreenFit = function() {
+  const dash = document.getElementById('view-dashboard');
+  if (!dash) return;
+  const isFitted = dash.classList.toggle('dashboard-screen-fitted');
+  try {
+    localStorage.setItem('aaryan_dashboard_fit_screen', isFitted ? '1' : '0');
+  } catch (e) {}
+  updateDashboardFitButton(isFitted);
+
+  if (typeof salesChartInstance !== 'undefined' && salesChartInstance) {
+    salesChartInstance.resize();
+  }
+  if (typeof gstChartInstance !== 'undefined' && gstChartInstance) {
+    gstChartInstance.resize();
+  }
+  if (typeof showToast === 'function') {
+    showToast(isFitted ? "Auto Screen-Fit Mode: Dashboard adapted to screen" : "Standard Scroll View Restored", "info");
+  }
+};
+
+function updateDashboardFitButton(isFitted) {
+  const btn = document.getElementById('dashboard-fit-toggle-btn');
+  const icon = document.getElementById('dashboard-fit-icon');
+  const label = document.getElementById('dashboard-fit-label');
+  if (!btn) return;
+  if (isFitted) {
+    btn.classList.add('btn-cyan');
+    btn.classList.remove('btn-secondary');
+    if (icon) icon.className = 'fa-solid fa-expand';
+    if (label) label.textContent = 'Fitted View';
+  } else {
+    btn.classList.remove('btn-cyan');
+    btn.classList.add('btn-secondary');
+    if (icon) icon.className = 'fa-solid fa-compress';
+    if (label) label.textContent = 'Fit Screen';
+  }
+}
+
+function initDashboardScreenFit() {
+  try {
+    const saved = localStorage.getItem('aaryan_dashboard_fit_screen');
+    if (saved === '1') {
+      const dash = document.getElementById('view-dashboard');
+      if (dash) dash.classList.add('dashboard-screen-fitted');
+      updateDashboardFitButton(true);
+    }
+  } catch (e) {}
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initDashboardScreenFit);
+} else {
+  initDashboardScreenFit();
+}
+
 

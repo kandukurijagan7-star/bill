@@ -78,7 +78,7 @@
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.google.com">
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=329_scroll_products_stock_fix">
+  <link rel="stylesheet" href="index.css?v=344_dashboard_screen_fit">
   <script src="invoice_utils_v5.js?v=338_paid_reminder_symbol_fix"></script>
 </head>
 <body>
@@ -275,6 +275,9 @@
             <button class="btn btn-secondary btn-hero" onclick="switchTab('reports')">
               <i class="fa-solid fa-chart-pie"></i> View Reports
             </button>
+            <button class="btn btn-secondary btn-hero" id="dashboard-fit-toggle-btn" onclick="toggleDashboardScreenFit()" title="Toggle Screen-Fit Mode (Fits entire dashboard to your laptop / monitor height)">
+              <i class="fa-solid fa-compress" id="dashboard-fit-icon"></i> <span id="dashboard-fit-label">Fit Screen</span>
+            </button>
           </div>
         </div>
 
@@ -356,6 +359,17 @@
               <span class="stat-trend text-green" id="stat-profit-margin-trend"><i class="fa-solid fa-arrow-trend-up"></i> <span id="stat-profit-pct">0%</span> Margin</span>
             </div>
           </div>
+
+          <div class="stat-card">
+            <div class="stat-icon bg-teal-light" style="background: rgba(14, 165, 233, 0.12);">
+              <i class="fa-solid fa-receipt text-teal" style="color: #0284c7;"></i>
+            </div>
+            <div class="stat-details">
+              <span class="stat-label">SETTLEMENT RATE</span>
+              <h3 id="stat-settlement-rate">100.0%</h3>
+              <span class="stat-trend text-green" id="stat-settlement-trend"><i class="fa-solid fa-circle-check"></i> <span id="stat-settlement-sub">Payment Recovery</span></span>
+            </div>
+          </div>
         </div>
 
         <!-- Live Analytics & Revenue Charts Grid -->
@@ -365,7 +379,7 @@
               <h3><i class="fa-solid fa-chart-area text-cyan"></i> Monthly Sales & Revenue Trend</h3>
               <span class="badge-status badge-paid">Live Analytics</span>
             </div>
-            <div style="height: 190px; position: relative; padding: 4px 6px;">
+            <div class="chart-canvas-container" style="position: relative; padding: 4px 6px;">
               <canvas id="dashboard-sales-chart"></canvas>
             </div>
           </div>
@@ -374,7 +388,7 @@
               <h3><i class="fa-solid fa-chart-pie text-emerald"></i> GST Tax Breakdown</h3>
               <span class="badge-status badge-paid">Tax Analytics</span>
             </div>
-            <div style="height: 190px; position: relative; padding: 4px 6px;">
+            <div class="chart-canvas-container" style="position: relative; padding: 4px 6px;">
               <canvas id="dashboard-gst-chart"></canvas>
             </div>
           </div>
@@ -3959,7 +3973,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=343_auto_screen_fit_device_qr_upload"></script>
+  <script src="index_v5.js?v=344_dashboard_screen_fit"></script>
 </body>
 </html>
 
