@@ -2768,6 +2768,47 @@
           </div>
         </div>
 
+        <!-- STATE D: CANCELLED / VOIDED INVOICE -->
+        <div id="verify-state-cancelled" style="display: none; text-align: center; padding: 10px 0;">
+          <div style="width: 72px; height: 72px; border-radius: 50%; background: #fef2f2; color: #dc2626; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px auto; font-size: 34px; box-shadow: 0 4px 14px rgba(220, 38, 38, 0.25); border: 2px solid #fecaca;">
+            <i class="fa-solid fa-ban"></i>
+          </div>
+          <h4 style="margin: 0 0 6px 0; color: #991b1b; font-size: 19px; font-weight: 800; letter-spacing: -0.02em;">INVOICE CANCELLED / VOIDED</h4>
+          <p style="margin: 0 0 14px 0; font-size: 12px; color: #b91c1c; font-weight: 600;">Official Registry Notice: This document is no longer active.</p>
+
+          <div style="background: #fff1f2; border: 1.5px solid #fecdd3; border-radius: 10px; padding: 14px; font-size: 12.5px; margin-bottom: 16px; text-align: left;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="color: #881337;">Invoice #:</span>
+              <span style="font-weight: 700; color: #9f1239;" id="verify-cancel-inv-no">#0000</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="color: #881337;">Originally Billed To:</span>
+              <span style="font-weight: 700; color: #881337;" id="verify-cancel-customer">--</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="color: #881337;">Original Bill Total:</span>
+              <span style="font-weight: 700; color: #9f1239;">₹ <span id="verify-cancel-total">0.00</span></span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="color: #881337;">Status:</span>
+              <span class="badge-status badge-unpaid" style="background: #ffe4e6; color: #be123c; border: 1px solid #fda4af; font-weight: 700;">CANCELLED / VOID</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #881337;">Cancellation Details:</span>
+              <span style="font-size: 11px; color: #9f1239; font-style: italic;" id="verify-cancel-reason">Deleted from official registry</span>
+            </div>
+          </div>
+
+          <div style="background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 12px; font-size: 12px; color: #7f1d1d; line-height: 1.5; margin-bottom: 16px; text-align: left;">
+            <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626; margin-right: 4px;"></i>
+            <strong>WARNING:</strong> This invoice was officially cancelled or deleted from the records. It is strictly void. <strong>Do NOT make any payments</strong> against this QR code.
+          </div>
+
+          <button type="button" class="btn btn-secondary" onclick="closeInvoiceVerificationModal()" style="width: 100%; justify-content: center; font-size: 13px; font-weight: 600;">
+            <i class="fa-solid fa-xmark"></i> Close Verification Window
+          </button>
+        </div>
+
         <!-- STATE B & C: VALID INVOICE SUMMARY -->
         <div id="verify-state-valid" style="display: none;">
           <!-- Status Banner -->
@@ -3979,7 +4020,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=350_unlimited_product_add_without_reload"></script>
+  <script src="index_v5.js?v=351_unique_qr_isolation_and_voided_registry"></script>
 </body>
 </html>
 

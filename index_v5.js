@@ -60,7 +60,51 @@ try {
   globalSettings = JSON.parse(localStorage.getItem("settings") || "{}");
   if (Array.isArray(invoicesDb) && invoicesDb.length > 0) {
     invoicesDb.sort((a, b) => String(a.invoiceNo || "").localeCompare(String(b.invoiceNo || "")));
+    invoicesDb.forEach(inv => {
+      if (inv && !inv.qrToken) {
+        const sfx = (inv.id || '').replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase() || Math.random().toString(36).substring(2, 6).toUpperCase();
+        inv.qrToken = `Q-${String(inv.invoiceNo || '').replace(/^#/, '')}-${sfx}`;
+        if (inv.details) inv.details.qrToken = inv.qrToken;
+      }
+    });
   }
+
+  // Persistent Cancelled / Voided Invoices Registry
+  window.archiveCancelledInvoice = function(invoiceRecord, reason = "Cancelled") {
+    try {
+      if (!invoiceRecord) return;
+      const cancelled = JSON.parse(localStorage.getItem("cancelled_invoices") || "[]");
+      const id = String(invoiceRecord.id || `inv_${invoiceRecord.invoiceNo}`).trim();
+      const token = String(invoiceRecord.qrToken || invoiceRecord.details?.qrToken || "").trim();
+      const invNo = String(invoiceRecord.invoiceNo || invoiceRecord.details?.invoiceNo || "").trim();
+      const cust = String(invoiceRecord.customerName || invoiceRecord.buyerName || invoiceRecord.details?.buyer?.name || "Customer").trim();
+      const total = parseFloat(invoiceRecord.total || invoiceRecord.details?.total || 0) || 0;
+      const date = invoiceRecord.invoiceDate || invoiceRecord.details?.invoiceDate || new Date().toISOString();
+      const nowIso = new Date().toISOString();
+
+      const entry = {
+        id: id,
+        token: token,
+        invoiceNo: invNo,
+        customerName: cust,
+        total: total,
+        invoiceDate: date,
+        cancelledAt: nowIso,
+        reason: reason,
+        status: "CANCELLED"
+      };
+
+      const updated = [entry, ...cancelled.filter(c => c && c.id !== id && (!token || c.token !== token))].slice(0, 300);
+      localStorage.setItem("cancelled_invoices", JSON.stringify(updated));
+
+      if (typeof pushDirectToGoogleDatabase === 'function') {
+        pushDirectToGoogleDatabase("archive_cancelled_invoice", { cancelledRecord: entry });
+      }
+    } catch (e) {
+      console.warn("archiveCancelledInvoice error:", e);
+    }
+  };
+
   // Deleted Invoice Tombstone Management (Zero-Resurrection Engine with Active-Invoice Immunity)
   window.getDeletedInvoiceTombstones = function() {
     try {
@@ -5598,7 +5642,7 @@ window.processAndRouteDecodedQr = function(rawCode, source = 'upload') {
     invNo = decodeURIComponent(invNo);
 
     if (typeof openInvoiceVerificationModal === "function") {
-      openInvoiceVerificationModal(invNo);
+      openInvoiceVerificationModal(invNo, clean);
       if (typeof showFloatingToast === 'function') {
         showFloatingToast(`🧾 Invoice #${invNo} loaded from device QR! Settle balance below.`, "success", 4000);
       }
@@ -6119,6 +6163,7 @@ function resetBillingForm() {
   
   currentInvoice = {
     id: "",
+    qrToken: "",
     isEditing: false,
     invoiceType: "Bill of Supply",
     headerLogo: "ganesha",
@@ -6353,12 +6398,19 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
     const uniqueId = currentInvoice.id || "inv_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
     currentInvoice.id = uniqueId;
 
+    if (!currentInvoice.qrToken) {
+      const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const timeSuffix = Date.now().toString(36).slice(-4).toUpperCase();
+      currentInvoice.qrToken = `Q-${String(currentInvoice.invoiceNo || 'INV').replace(/^#/, '')}-${timeSuffix}${randSuffix}`;
+    }
+
     const consigneeDisplayName = (currentInvoice.consignee?.name || '').trim();
     const buyerDisplayName = (currentInvoice.buyer?.name || '').trim();
     const primaryCustomerDisplay = consigneeDisplayName || buyerDisplayName || "Cash Customer";
 
     const invoiceRecord = {
       id: uniqueId,
+      qrToken: currentInvoice.qrToken,
       invoiceNo: currentInvoice.invoiceNo,
       invoiceDate: currentInvoice.invoiceDate,
       customerName: primaryCustomerDisplay,
@@ -6403,6 +6455,7 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
 
     // Immediately disarm currentInvoice editing state so subsequent bills are brand new
     currentInvoice.id = "";
+    currentInvoice.qrToken = "";
     currentInvoice.isEditing = false;
 
     // Unblock any tombstone matching this invoice number or ID so newly generated invoices are NEVER filtered out
@@ -7035,7 +7088,9 @@ function populateThermalPrintOverlay(invoice) {
   const cName = globalSettings.company?.name || "Aaryan Aqua Needs";
   const amountToPay = (invoice.balanceDue > 0 ? invoice.balanceDue : (invoice.total || taxableVal)) || 0;
   const cleanInvNo = String(invoice.invoiceNo || '1').replace(/[^a-zA-Z0-9]/g, '');
-  const upiUrl = `upi://pay?pa=${realUpiId}&pn=${encodeURIComponent(cName.replace(/[^a-zA-Z0-9 ]/g, '').trim())}&am=${amountToPay.toFixed(2)}&cu=INR&tn=Bill${cleanInvStr || cleanInvNo}`;
+  const qrSuffix = (invoice.qrToken || invoice.id || "").toString().replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase() || Math.random().toString(36).substring(2, 6).toUpperCase();
+  const upiTr = `${cleanInvNo}${qrSuffix}`.slice(-20);
+  const upiUrl = `upi://pay?pa=${realUpiId}&pn=${encodeURIComponent(cName.replace(/[^a-zA-Z0-9 ]/g, '').trim())}&am=${amountToPay.toFixed(2)}&cu=INR&tn=Bill${cleanInvNo}-${qrSuffix}&tr=${upiTr}`;
   const qrImg = document.getElementById("th-upi-qr-img");
   if (qrImg) {
     const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
@@ -9201,7 +9256,7 @@ let currentBalanceQrInv = null;
 window.openBalanceQrModal = function(id) {
   const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => i.id === id || i.invoiceNo === id);
   if (inv && typeof openInvoiceVerificationModal === "function") {
-    openInvoiceVerificationModal(inv.invoiceNo || inv.id);
+    openInvoiceVerificationModal(inv.id || inv.invoiceNo);
     return;
   }
   if (!inv) return;
@@ -9229,8 +9284,10 @@ window.openBalanceQrModal = function(id) {
   if (upiIdEl) upiIdEl.textContent = realUpiId;
 
   const upiName = encodeURIComponent((globalSettings.company?.name || "Aaryan Aqua Needs").replace(/[^a-zA-Z0-9 ]/g, '').trim());
-  const cleanNote = `Bill${inv.invoiceNo || '1'}`.replace(/[^a-zA-Z0-9]/g, '');
-  const upiUri = `upi://pay?pa=${realUpiId}&pn=${upiName}&am=${balance.toFixed(2)}&cu=INR&tn=${cleanNote}`;
+  const cleanInvNo = String(inv.invoiceNo || '1').replace(/[^a-zA-Z0-9]/g, '');
+  const qrSuffix = (inv.qrToken || details.qrToken || inv.id || "").toString().replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase() || Math.random().toString(36).substring(2, 6).toUpperCase();
+  const upiTr = `${cleanInvNo}${qrSuffix}`.slice(-20);
+  const upiUri = `upi://pay?pa=${realUpiId}&pn=${upiName}&am=${balance.toFixed(2)}&cu=INR&tn=Bill${cleanInvNo}-${qrSuffix}&tr=${upiTr}`;
 
   const canvas = document.getElementById("balance-qr-canvas");
   const imgEl = document.getElementById("balance-qr-img");
@@ -9792,6 +9849,7 @@ window.editSavedInvoice = function(id) {
   if (inv) {
     currentInvoice = JSON.parse(JSON.stringify(inv.details));
     currentInvoice.id = inv.id;
+    currentInvoice.qrToken = inv.qrToken || (inv.details && inv.details.qrToken) || "";
     currentInvoice.isEditing = true;
     
     // Safety check default structures
@@ -9878,6 +9936,11 @@ window.deleteSavedInvoice = function(identifier) {
   const displayNo = invNo ? `#${invNo}` : (cleanId ? `#${cleanId}` : "this");
 
   if (confirm(`Delete ${displayNo} invoice record from history?\n\nSequence will automatically roll back directly to this invoice number.`)) {
+    // 0. Safely archive to persistent cancelled/voided registry so old QR code is recognized as VOID
+    if (inv && typeof window.archiveCancelledInvoice === 'function') {
+      window.archiveCancelledInvoice(inv, "Deleted by user from Invoice History");
+    }
+
     // 1. Stock restoration if details exist
     if (inv && (inv.details || inv.items)) {
       try {
@@ -13907,6 +13970,8 @@ window.getInvoiceVerificationUrl = function(invoiceNo, invoiceObj = null) {
 
   if (invoiceObj) {
     const details = invoiceObj.details || invoiceObj;
+    const invId = invoiceObj.id || details.id || "";
+    const qrToken = invoiceObj.qrToken || details.qrToken || "";
     const cust = invoiceObj.buyerName || details.buyer?.name || invoiceObj.customerName || '';
     const phone = details.buyer?.phone || invoiceObj.phone || invoiceObj.customerPhone || '';
     const total = invoiceObj.total || details.total || 0;
@@ -13914,26 +13979,151 @@ window.getInvoiceVerificationUrl = function(invoiceNo, invoiceObj = null) {
     const bal = invoiceObj.balanceDue !== undefined ? invoiceObj.balanceDue : Math.max(0, total - paid);
     const dt = invoiceObj.invoiceDate || details.invoiceDate || invoiceObj.date || '';
 
+    if (invId) url += `&id=${encodeURIComponent(invId)}`;
+    if (qrToken) url += `&token=${encodeURIComponent(qrToken)}`;
     url += `&cust=${encodeURIComponent(cust)}&ph=${encodeURIComponent(phone)}&tot=${total}&paid=${paid}&bal=${bal}&dt=${encodeURIComponent(dt)}`;
   }
   return url;
 };
 
-window.openInvoiceVerificationModal = function(invoiceNo) {
+window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
   const modal = document.getElementById("invoice-verification-modal");
   if (!modal) return;
 
-  const urlParams = new URLSearchParams(window.location.search);
+  let urlParams = null;
+  if (rawUrl && rawUrl.includes("?")) {
+    urlParams = new URLSearchParams(rawUrl.split("?")[1]);
+  } else {
+    urlParams = new URLSearchParams(window.location.search);
+  }
+
   const cleanNo = String(invoiceNo || urlParams.get("verify_invoice") || urlParams.get("invoice") || "").trim();
+  const qId = String(urlParams.get("id") || urlParams.get("inv_id") || "").trim();
+  const qToken = String(urlParams.get("token") || urlParams.get("qrToken") || urlParams.get("uid") || "").trim();
+  const qCust = String(urlParams.get("cust") || "").trim();
+  const qTot = parseFloat(urlParams.get("tot")) || 0;
+
   window.currentVerifiedInvoiceNo = cleanNo;
+  window.currentVerifiedInvoiceId = qId || null;
 
-  // 1. Search in invoicesDb
-  let inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
-    String(i.invoiceNo || "").trim().toLowerCase() === cleanNo.toLowerCase() ||
-    String(i.id || "").trim().toLowerCase() === cleanNo.toLowerCase()
-  );
+  const stateInvalid = document.getElementById("verify-state-invalid");
+  const stateValid = document.getElementById("verify-state-valid");
+  const stateCancelled = document.getElementById("verify-state-cancelled");
+  const header = document.getElementById("verify-modal-header");
+  const titleEl = document.getElementById("verify-modal-title");
+  const subtitleEl = document.getElementById("verify-modal-subtitle");
+  const badgeIcon = document.getElementById("verify-modal-badge-icon");
+  const printBtn = document.getElementById("verify-print-btn");
 
-  // 2. Fallback: Parse verification details directly from URL params if guest customer on mobile
+  const renderCancelledState = (canc) => {
+    if (stateInvalid) stateInvalid.style.display = "none";
+    if (stateValid) stateValid.style.display = "none";
+    if (stateCancelled) stateCancelled.style.display = "block";
+
+    if (header) header.style.background = "linear-gradient(135deg, #7f1d1d, #450a0a)";
+    if (titleEl) titleEl.textContent = "Invoice Verification — Cancelled / Void";
+    if (subtitleEl) subtitleEl.textContent = "Official Notice • Document Voided";
+    if (badgeIcon) {
+      badgeIcon.innerHTML = '<i class="fa-solid fa-ban"></i>';
+      badgeIcon.style.background = "rgba(239, 68, 68, 0.35)";
+    }
+    if (printBtn) printBtn.style.display = "none";
+
+    const noEl = document.getElementById("verify-cancel-inv-no");
+    if (noEl) noEl.textContent = canc.invoiceNo ? `#${canc.invoiceNo}` : (cleanNo ? `#${cleanNo}` : 'N/A');
+    const custEl = document.getElementById("verify-cancel-customer");
+    if (custEl) custEl.textContent = canc.customerName || qCust || "Customer";
+    const totEl = document.getElementById("verify-cancel-total");
+    if (totEl) totEl.textContent = formatCurrency(canc.total !== undefined ? canc.total : qTot);
+    const reasonEl = document.getElementById("verify-cancel-reason");
+    if (reasonEl) {
+      const delDateStr = canc.cancelledAt ? new Date(canc.cancelledAt).toLocaleDateString("en-IN") : "recent date";
+      reasonEl.textContent = canc.reason || `Cancelled & deleted from records (${delDateStr})`;
+    }
+
+    modal.classList.remove("hidden");
+  };
+
+  // 1. Check Cancelled Registry
+  const cancelledInvoices = JSON.parse(localStorage.getItem("cancelled_invoices") || "[]");
+  let cancMatch = null;
+  if (qId) {
+    cancMatch = cancelledInvoices.find(c => c && String(c.id).trim().toLowerCase() === qId.toLowerCase());
+  }
+  if (!cancMatch && qToken) {
+    cancMatch = cancelledInvoices.find(c => c && String(c.token).trim().toLowerCase() === qToken.toLowerCase());
+  }
+
+  // 2. Search in active invoicesDb
+  let activeInv = null;
+  if (qId) {
+    activeInv = (invoicesDb || []).find(i => i && String(i.id).trim().toLowerCase() === qId.toLowerCase());
+  }
+  if (!activeInv && qToken) {
+    activeInv = (invoicesDb || []).find(i => i && (
+      (i.qrToken && String(i.qrToken).trim().toLowerCase() === qToken.toLowerCase()) ||
+      (i.details && i.details.qrToken && String(i.details.qrToken).trim().toLowerCase() === qToken.toLowerCase())
+    ));
+  }
+
+  const activeByNo = (invoicesDb || []).find(i => {
+    if (!i) return false;
+    const iNo = String(i.invoiceNo || (i.details && i.details.invoiceNo) || "").trim().toLowerCase();
+    const cNo = cleanNo.toLowerCase().replace(/^#/, '');
+    return iNo === cNo || iNo === `#${cNo}`;
+  });
+
+  // Collision Detection: If active invoice exists with this number, but scanned QR has a different explicit ID or different customer/amount:
+  if (activeByNo && (qId || qToken || (qCust && qCust !== "Valued Customer"))) {
+    const activeId = String(activeByNo.id || "").trim().toLowerCase();
+    const activeToken = String(activeByNo.qrToken || (activeByNo.details && activeByNo.details.qrToken) || "").trim().toLowerCase();
+    const activeCust = String(activeByNo.customerName || (activeByNo.details && (activeByNo.details.consignee?.name || activeByNo.details.buyer?.name)) || "").trim().toLowerCase();
+    const activeTotal = parseFloat(activeByNo.total || (activeByNo.details && activeByNo.details.total) || 0);
+
+    const isIdMismatch = qId && activeId && qId.toLowerCase() !== activeId;
+    const isTokenMismatch = qToken && activeToken && qToken.toLowerCase() !== activeToken;
+    const isCustMismatch = qCust && activeCust && !activeCust.includes(qCust.toLowerCase()) && !qCust.toLowerCase().includes(activeCust);
+    const isAmtMismatch = qTot > 0 && Math.abs(activeTotal - qTot) > 1.0;
+
+    if (isIdMismatch || isTokenMismatch || (isCustMismatch && isAmtMismatch)) {
+      return renderCancelledState({
+        id: qId,
+        token: qToken,
+        invoiceNo: cleanNo,
+        customerName: qCust || "Original Customer",
+        total: qTot,
+        reason: `Superseded: An invoice #${cleanNo} was re-issued. This earlier version is void.`
+      });
+    }
+  }
+
+  if (cancMatch) {
+    return renderCancelledState(cancMatch);
+  }
+
+  let inv = activeInv || activeByNo;
+
+  // Check tombstones if not found in active DB
+  if (!inv) {
+    const tombstones = typeof window.getDeletedInvoiceTombstones === "function" ? window.getDeletedInvoiceTombstones() : [];
+    const cleanLower = cleanNo.toLowerCase().replace(/^#/, '');
+    const isTombstone = tombstones.some(t => {
+      const tClean = String(t).toLowerCase().replace(/^#/, '').replace(/^inv_/, '');
+      return tClean === cleanLower || (qId && t === qId.toLowerCase());
+    });
+    if (isTombstone) {
+      return renderCancelledState({
+        id: qId,
+        token: qToken,
+        invoiceNo: cleanNo,
+        customerName: qCust || "Customer",
+        total: qTot,
+        reason: "Officially deleted from company registry"
+      });
+    }
+  }
+
+  // 3. Fallback: Parse verification details directly from URL params if guest customer on mobile
   if (!inv && cleanNo && urlParams.get("verify_invoice")) {
     const qInvNo = urlParams.get("verify_invoice");
     if (String(qInvNo).trim().toLowerCase() === cleanNo.toLowerCase()) {
@@ -13966,16 +14156,9 @@ window.openInvoiceVerificationModal = function(invoiceNo) {
     }
   }
 
-  const stateInvalid = document.getElementById("verify-state-invalid");
-  const stateValid = document.getElementById("verify-state-valid");
-  const header = document.getElementById("verify-modal-header");
-  const titleEl = document.getElementById("verify-modal-title");
-  const subtitleEl = document.getElementById("verify-modal-subtitle");
-  const badgeIcon = document.getElementById("verify-modal-badge-icon");
-  const printBtn = document.getElementById("verify-print-btn");
-
   if (!inv) {
     // INVALID / UNVERIFIED STATE
+    if (stateCancelled) stateCancelled.style.display = "none";
     if (stateInvalid) stateInvalid.style.display = "block";
     if (stateValid) stateValid.style.display = "none";
     if (header) header.style.background = "linear-gradient(135deg, #7f1d1d, #991b1b)";
@@ -13994,10 +14177,12 @@ window.openInvoiceVerificationModal = function(invoiceNo) {
   }
 
   // VALID INVOICE STATE
+  if (stateCancelled) stateCancelled.style.display = "none";
   if (stateInvalid) stateInvalid.style.display = "none";
   if (stateValid) stateValid.style.display = "block";
 
   const invDetails = inv.details || inv;
+  window.currentVerifiedInvoiceId = inv.id || invDetails.id || null;
   const invNo = inv.invoiceNo || invDetails.invoiceNo || cleanNo;
   const invDate = invDetails.invoiceDate || inv.date || inv.createdAt;
   const custName = inv.buyerName || invDetails.buyer?.name || inv.customerName || "Customer";
@@ -14061,11 +14246,13 @@ window.openInvoiceVerificationModal = function(invoiceNo) {
       doneBtn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Balance (₹ ${formatCurrency(balDue)}) & Update Dashboard`;
     }
 
-    // Setup UPI Payment Links
+    // Setup UPI Payment Links with unique qrSuffix & tr
     const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
     const cName = (globalSettings.company?.name || "Aaryan Aqua Needs").replace(/[^a-zA-Z0-9 ]/g, '').trim();
     const cleanInvStr = String(invNo).replace(/[^a-zA-Z0-9]/g, '');
-    const upiUri = `upi://pay?pa=${realUpiId}&pn=${encodeURIComponent(cName)}&am=${balDue.toFixed(2)}&cu=INR&tn=Bill${cleanInvStr}`;
+    const qrSuffix = (inv.qrToken || invDetails.qrToken || inv.id || "").toString().replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase() || Math.random().toString(36).substring(2, 6).toUpperCase();
+    const upiTr = `${cleanInvStr}${qrSuffix}`.slice(-20);
+    const upiUri = `upi://pay?pa=${realUpiId}&pn=${encodeURIComponent(cName)}&am=${balDue.toFixed(2)}&cu=INR&tn=Bill${cleanInvStr}-${qrSuffix}&tr=${upiTr}`;
 
     const upiQrImg = document.getElementById("verify-upi-qr-img");
     if (upiQrImg) {
@@ -14307,13 +14494,14 @@ window.checkUrlVerificationParams = function() {
     const verifyInvoiceParam = urlParams.get("verify_invoice") || urlParams.get("invoice") || urlParams.get("verify");
     if (verifyInvoiceParam) {
       const targetNo = verifyInvoiceParam.trim();
+      const currentUrl = window.location.href;
       // Immediate execution
-      openInvoiceVerificationModal(targetNo);
+      openInvoiceVerificationModal(targetNo, currentUrl);
       // Scheduled retries for async DB loading
-      setTimeout(() => openInvoiceVerificationModal(targetNo), 300);
-      setTimeout(() => openInvoiceVerificationModal(targetNo), 800);
-      setTimeout(() => openInvoiceVerificationModal(targetNo), 1800);
-      setTimeout(() => openInvoiceVerificationModal(targetNo), 3500);
+      setTimeout(() => openInvoiceVerificationModal(targetNo, currentUrl), 300);
+      setTimeout(() => openInvoiceVerificationModal(targetNo, currentUrl), 800);
+      setTimeout(() => openInvoiceVerificationModal(targetNo, currentUrl), 1800);
+      setTimeout(() => openInvoiceVerificationModal(targetNo, currentUrl), 3500);
     }
   } catch (e) {
     console.warn("Error checking URL verification params:", e);
