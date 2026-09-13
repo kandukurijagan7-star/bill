@@ -64,7 +64,7 @@
       } catch (e) {}
     }
     // Build Version Enforcement: Clears stale caches when new build is deployed
-    window.__APP_BUILD_VERSION__ = "v347_tab_isolation_fix";
+    window.__APP_BUILD_VERSION__ = "v348_tab_isolation_hardened";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -78,7 +78,7 @@
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.google.com">
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=346_dynamic_screen_fit">
+  <link rel="stylesheet" href="index.css?v=348_tab_isolation_hardened">
   <script src="invoice_utils_v5.js?v=338_paid_reminder_symbol_fix"></script>
 </head>
 <body>
@@ -3973,7 +3973,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=346_dynamic_screen_fit"></script>
+  <script src="index_v5.js?v=348_tab_isolation_hardened"></script>
 </body>
 </html>
 

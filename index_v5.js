@@ -2969,9 +2969,11 @@ window.switchTab = function(tabName) {
   elements.views.forEach(view => {
     if (view.id === `view-${tabName}`) {
       view.classList.remove("hidden");
+      view.style.removeProperty('display');
       view.scrollTop = 0;
     } else {
       view.classList.add("hidden");
+      view.style.setProperty('display', 'none', 'important');
     }
   });
 
