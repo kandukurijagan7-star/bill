@@ -32,7 +32,8 @@
       "lord_ganesha.jpg",
       "manifest.json",
       "electron-main.js",
-      "mqtt.min.js"
+      "mqtt.min.js",
+      "jsqr.min.js"
     ],
     "mac": {
       "category": "public.app-category.finance",

@@ -4769,12 +4769,12 @@ if ('BarcodeDetector' in window) {
   }
 }
 
-window.openBarcodeScannerModal = async function() {
+window.openBarcodeScannerModal = async function(initialTab = 'camera') {
   const modal = document.getElementById("barcode-scanner-modal");
   if (!modal) return;
   modal.classList.remove("hidden");
   modal.style.display = "flex";
-  await startBarcodeCamera();
+  await window.switchScannerTab(initialTab);
 };
 
 window.closeBarcodeScannerModal = function() {
@@ -4784,6 +4784,27 @@ window.closeBarcodeScannerModal = function() {
     modal.style.display = "none";
   }
   stopBarcodeCamera();
+};
+
+window.switchScannerTab = async function(tab) {
+  const btnCamera = document.getElementById("scanner-tab-btn-camera");
+  const btnUpload = document.getElementById("scanner-tab-btn-upload");
+  const paneCamera = document.getElementById("scanner-tab-camera-pane");
+  const paneUpload = document.getElementById("scanner-tab-upload-pane");
+
+  if (tab === 'upload') {
+    if (btnCamera) btnCamera.classList.remove("active");
+    if (btnUpload) btnUpload.classList.add("active");
+    if (paneCamera) paneCamera.style.display = "none";
+    if (paneUpload) paneUpload.style.display = "block";
+    stopBarcodeCamera();
+  } else {
+    if (btnCamera) btnCamera.classList.add("active");
+    if (btnUpload) btnUpload.classList.remove("active");
+    if (paneCamera) paneCamera.style.display = "block";
+    if (paneUpload) paneUpload.style.display = "none";
+    await startBarcodeCamera();
+  }
 };
 
 async function startBarcodeCamera() {
@@ -4834,7 +4855,7 @@ async function startBarcodeCamera() {
 
   } catch (err) {
     console.warn("Camera access warning:", err);
-    if (statusEl) statusEl.textContent = "⚠️ Camera access unavailable. Please type barcode below.";
+    if (statusEl) statusEl.textContent = "⚠️ Camera access unavailable. Please type barcode or upload file.";
   }
 }
 
@@ -4887,23 +4908,557 @@ window.submitManualBarcode = function() {
   }
 };
 
-window.handleScannedBarcode = function(code) {
-  if (!code) return;
-  const clean = String(code).trim();
+// --- ADVANCED REAL-TIME MULTI-PASS CLIENT-SIDE DECODER ---
+window.decodeQrOrBarcodeFromImage = async function(source) {
+  const startTime = performance.now();
+  if (!source) {
+    return { success: false, error: "No image source provided" };
+  }
 
-  // Intercept Invoice Verification QR scans
+  let imgElement = null;
+  let objectUrlToRevoke = null;
+
+  try {
+    if (source instanceof HTMLImageElement && source.complete && source.naturalWidth > 0) {
+      imgElement = source;
+    } else if (source instanceof HTMLCanvasElement) {
+      return await scanCanvasMultiPass(source, startTime);
+    } else {
+      let srcUrl = "";
+      if (source instanceof Blob || source instanceof File) {
+        srcUrl = URL.createObjectURL(source);
+        objectUrlToRevoke = srcUrl;
+      } else if (typeof source === 'string') {
+        srcUrl = source;
+      }
+
+      if (!srcUrl) {
+        return { success: false, error: "Unsupported image format" };
+      }
+
+      imgElement = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("Failed to load image file"));
+        img.src = srcUrl;
+      });
+    }
+
+    if (!imgElement || !imgElement.naturalWidth) {
+      if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
+      return { success: false, error: "Unable to read image dimensions" };
+    }
+
+    const naturalWidth = imgElement.naturalWidth || imgElement.width;
+    const naturalHeight = imgElement.naturalHeight || imgElement.height;
+
+    // Normalize resolution: cap max dimension to 1400px for speed
+    const maxDim = 1400;
+    let targetWidth = naturalWidth;
+    let targetHeight = naturalHeight;
+    if (naturalWidth > maxDim || naturalHeight > maxDim) {
+      if (naturalWidth > naturalHeight) {
+        targetWidth = maxDim;
+        targetHeight = Math.round((naturalHeight * maxDim) / naturalWidth);
+      } else {
+        targetHeight = maxDim;
+        targetWidth = Math.round((naturalWidth * maxDim) / naturalHeight);
+      }
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(imgElement, 0, 0, targetWidth, targetHeight);
+
+    if (objectUrlToRevoke) {
+      URL.revokeObjectURL(objectUrlToRevoke);
+    }
+
+    return await scanCanvasMultiPass(canvas, startTime);
+
+  } catch (err) {
+    if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
+    return { success: false, error: err.message || "Failed to decode image" };
+  }
+};
+
+async function scanCanvasMultiPass(canvas, startTime) {
+  const width = canvas.width;
+  const height = canvas.height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+  // PASS 1: Hardware BarcodeDetector (Chromium/Electron native, ultra-fast <8ms)
+  if (barcodeDetectorInstance) {
+    try {
+      const detected = await barcodeDetectorInstance.detect(canvas);
+      if (detected && detected.length > 0 && detected[0].rawValue) {
+        const ms = Math.round(performance.now() - startTime);
+        return {
+          success: true,
+          text: detected[0].rawValue,
+          format: detected[0].format || 'barcode',
+          method: 'Hardware BarcodeDetector',
+          durationMs: ms
+        };
+      }
+    } catch (e) {}
+  }
+
+  // Pure JavaScript jsQR Pipeline
+  if (typeof jsQR !== "undefined") {
+    let imgData = null;
+    try {
+      imgData = ctx.getImageData(0, 0, width, height);
+    } catch (e) {
+      return { success: false, error: "Canvas security restriction reading pixels." };
+    }
+
+    // PASS 2: jsQR Standard (Direct Luma, non-inverted)
+    let qr = jsQR(imgData.data, width, height, { inversionAttempts: "dontInvert" });
+    if (qr && qr.data) {
+      return {
+        success: true,
+        text: qr.data,
+        format: "qr_code",
+        method: "jsQR Standard",
+        durationMs: Math.round(performance.now() - startTime)
+      };
+    }
+
+    // PASS 3: jsQR Inverted (Dark Theme / White on Black QR)
+    qr = jsQR(imgData.data, width, height, { inversionAttempts: "onlyInvert" });
+    if (qr && qr.data) {
+      return {
+        success: true,
+        text: qr.data,
+        format: "qr_code",
+        method: "jsQR Inverted",
+        durationMs: Math.round(performance.now() - startTime)
+      };
+    }
+
+    // PASS 4: Dynamic Contrast Stretching & Adaptive Binarization
+    try {
+      const data = imgData.data;
+      let minLum = 255;
+      let maxLum = 0;
+      const totalPixels = width * height;
+      const lums = new Uint8Array(totalPixels);
+
+      for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+        const lum = (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
+        lums[j] = lum;
+        if (lum < minLum) minLum = lum;
+        if (lum > maxLum) maxLum = lum;
+      }
+
+      const lumRange = maxLum - minLum;
+      if (lumRange > 25) {
+        const enhancedBuffer = new Uint8ClampedArray(data.length);
+        for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+          const stretched = Math.min(255, Math.max(0, ((lums[j] - minLum) * 255) / lumRange));
+          const val = stretched > 128 ? Math.min(255, stretched * 1.14) : Math.max(0, stretched * 0.86);
+          enhancedBuffer[i] = val;
+          enhancedBuffer[i + 1] = val;
+          enhancedBuffer[i + 2] = val;
+          enhancedBuffer[i + 3] = 255;
+        }
+
+        qr = jsQR(enhancedBuffer, width, height, { inversionAttempts: "attemptBoth" });
+        if (qr && qr.data) {
+          return {
+            success: true,
+            text: qr.data,
+            format: "qr_code",
+            method: "jsQR High-Contrast",
+            durationMs: Math.round(performance.now() - startTime)
+          };
+        }
+      }
+    } catch (e) {}
+
+    // PASS 5: Multi-Angle Orientation Rotations (90° and 270°)
+    try {
+      const rotCanvas = document.createElement("canvas");
+      rotCanvas.width = height;
+      rotCanvas.height = width;
+      const rotCtx = rotCanvas.getContext("2d", { willReadFrequently: true });
+
+      // Rotate 90 degrees
+      rotCtx.translate(height / 2, width / 2);
+      rotCtx.rotate(Math.PI / 2);
+      rotCtx.drawImage(canvas, -width / 2, -height / 2);
+
+      const rotData = rotCtx.getImageData(0, 0, height, width);
+      qr = jsQR(rotData.data, height, width, { inversionAttempts: "attemptBoth" });
+      if (qr && qr.data) {
+        return {
+          success: true,
+          text: qr.data,
+          format: "qr_code",
+          method: "jsQR Rotated 90°",
+          durationMs: Math.round(performance.now() - startTime)
+        };
+      }
+
+      // Rotate 270 degrees
+      rotCtx.setTransform(1, 0, 0, 1, 0, 0);
+      rotCtx.clearRect(0, 0, height, width);
+      rotCtx.translate(height / 2, width / 2);
+      rotCtx.rotate(Math.PI * 1.5);
+      rotCtx.drawImage(canvas, -width / 2, -height / 2);
+
+      const rotData270 = rotCtx.getImageData(0, 0, height, width);
+      qr = jsQR(rotData270.data, height, width, { inversionAttempts: "attemptBoth" });
+      if (qr && qr.data) {
+        return {
+          success: true,
+          text: qr.data,
+          format: "qr_code",
+          method: "jsQR Rotated 270°",
+          durationMs: Math.round(performance.now() - startTime)
+        };
+      }
+    } catch (e) {}
+
+    // PASS 6: Scaled Fallback
+    try {
+      if (width > 800 || height > 800) {
+        const scale = 600 / Math.max(width, height);
+        const sW = Math.round(width * scale);
+        const sH = Math.round(height * scale);
+        const scaleCanvas = document.createElement("canvas");
+        scaleCanvas.width = sW;
+        scaleCanvas.height = sH;
+        const sCtx = scaleCanvas.getContext("2d", { willReadFrequently: true });
+        sCtx.drawImage(canvas, 0, 0, sW, sH);
+        const sData = sCtx.getImageData(0, 0, sW, sH);
+        qr = jsQR(sData.data, sW, sH, { inversionAttempts: "attemptBoth" });
+        if (qr && qr.data) {
+          return {
+            success: true,
+            text: qr.data,
+            format: "qr_code",
+            method: "jsQR Scaled Resample",
+            durationMs: Math.round(performance.now() - startTime)
+          };
+        }
+      }
+    } catch (e) {}
+  }
+
+  return {
+    success: false,
+    error: "No readable QR code or barcode found in this image. Please ensure the QR is well-lit, sharp, and not obstructed.",
+    durationMs: Math.round(performance.now() - startTime)
+  };
+}
+
+window.handleDeviceQrFileInput = function(event) {
+  const file = event.target.files?.[0];
+  if (file) {
+    window.handleDeviceQrFile(file, 'file_picker');
+  }
+  event.target.value = "";
+};
+
+window.handleDeviceQrFile = async function(file, source = 'upload') {
+  if (!file) return;
+
+  const previewWrap = document.getElementById("qr-upload-preview-wrap");
+  const previewImg = document.getElementById("qr-upload-preview-img");
+  const dropzone = document.getElementById("qr-dropzone");
+  const statusText = document.getElementById("qr-upload-status-text");
+  const resultCard = document.getElementById("qr-upload-result-card");
+  const errorCard = document.getElementById("qr-upload-error-card");
+  const laserLine = document.getElementById("qr-upload-laser");
+
+  // Display preview container
+  if (previewWrap) previewWrap.style.display = "block";
+  if (dropzone) dropzone.style.display = "none";
+  if (resultCard) resultCard.style.display = "none";
+  if (errorCard) errorCard.style.display = "none";
+  if (laserLine) laserLine.classList.add("qr-laser-active");
+  if (statusText) {
+    statusText.textContent = "🔄 Real-time multi-pass analysis in progress...";
+    statusText.style.color = "#38bdf8";
+  }
+
+  // Load preview image
+  const objectUrl = URL.createObjectURL(file);
+  if (previewImg) {
+    previewImg.src = objectUrl;
+  }
+
+  try {
+    const result = await window.decodeQrOrBarcodeFromImage(file);
+    URL.revokeObjectURL(objectUrl);
+
+    if (laserLine) laserLine.classList.remove("qr-laser-active");
+
+    if (result.success && result.text) {
+      const clean = String(result.text).trim();
+
+      if (statusText) {
+        statusText.textContent = `✅ Recognized in ${result.durationMs}ms!`;
+        statusText.style.color = "#10b981";
+      }
+
+      const badge = document.getElementById("qr-result-type-badge");
+      const timeBadge = document.getElementById("qr-result-time-badge");
+      const valEl = document.getElementById("qr-result-value");
+      const actionBtn = document.getElementById("qr-result-action-btn");
+
+      let category = "DATA";
+      let actionLabel = "View Data";
+      let isInvoice = false;
+      let isProduct = false;
+
+      if (clean.includes("verify_invoice=") || clean.includes("/?verify_invoice=")) {
+        category = "INVOICE QR";
+        actionLabel = "🧾 Open & Settle Invoice";
+        isInvoice = true;
+      } else if (clean.startsWith("upi://pay")) {
+        category = "UPI PAYMENT";
+        actionLabel = "💳 Pay via UPI";
+      } else if (clean.includes("sync_pin=")) {
+        category = "P2P SYNC PIN";
+        actionLabel = "🔗 Pair Real-Time Mesh";
+      } else {
+        const match = (productsDb || []).find(p => p && (String(p.barcode || '').trim() === clean || String(p.id) === clean));
+        if (match) {
+          category = "PRODUCT BARCODE";
+          actionLabel = `📦 Add "${match.description}" to Bill`;
+          isProduct = true;
+        } else {
+          category = "BARCODE / QR";
+          actionLabel = "📋 Copy Code";
+        }
+      }
+
+      if (badge) badge.textContent = category;
+      if (timeBadge) timeBadge.textContent = `${result.durationMs}ms (${result.method})`;
+      if (valEl) valEl.textContent = clean;
+      if (actionBtn) {
+        actionBtn.textContent = actionLabel;
+        actionBtn.onclick = () => {
+          window.processAndRouteDecodedQr(clean, source);
+        };
+      }
+
+      if (resultCard) resultCard.style.display = "block";
+
+      window.playScannerBeep();
+
+      // Auto-route with smooth 450ms visual confirmation
+      setTimeout(() => {
+        if (isInvoice || isProduct) {
+          window.processAndRouteDecodedQr(clean, source);
+        }
+      }, 450);
+
+    } else {
+      if (statusText) {
+        statusText.textContent = "❌ Recognition Unsuccessful";
+        statusText.style.color = "#ef4444";
+      }
+      const errText = document.getElementById("qr-upload-error-text");
+      if (errText) {
+        errText.textContent = result.error || "No barcode or QR code could be detected in this photo.";
+      }
+      if (errorCard) errorCard.style.display = "block";
+    }
+
+  } catch (err) {
+    URL.revokeObjectURL(objectUrl);
+    if (laserLine) laserLine.classList.remove("qr-laser-active");
+    if (statusText) {
+      statusText.textContent = "⚠️ Error reading image file";
+      statusText.style.color = "#ef4444";
+    }
+  }
+};
+
+window.resetDeviceQrUpload = function() {
+  const previewWrap = document.getElementById("qr-upload-preview-wrap");
+  const dropzone = document.getElementById("qr-dropzone");
+  const previewImg = document.getElementById("qr-upload-preview-img");
+  const resultCard = document.getElementById("qr-upload-result-card");
+  const errorCard = document.getElementById("qr-upload-error-card");
+  const fileInput = document.getElementById("qr-device-file-input");
+  const camInput = document.getElementById("qr-device-camera-input");
+
+  if (previewWrap) previewWrap.style.display = "none";
+  if (dropzone) dropzone.style.display = "block";
+  if (previewImg) previewImg.src = "";
+  if (resultCard) resultCard.style.display = "none";
+  if (errorCard) errorCard.style.display = "none";
+  if (fileInput) fileInput.value = "";
+  if (camInput) camInput.value = "";
+};
+
+window.handleQrDropOver = function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const dz = document.getElementById("qr-dropzone");
+  if (dz) dz.classList.add("dragover");
+};
+
+window.handleQrDropLeave = function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const dz = document.getElementById("qr-dropzone");
+  if (dz) dz.classList.remove("dragover");
+};
+
+window.handleQrDrop = function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const dz = document.getElementById("qr-dropzone");
+  if (dz) dz.classList.remove("dragover");
+  const file = e.dataTransfer?.files?.[0];
+  if (file) {
+    window.handleDeviceQrFile(file, 'drag_and_drop');
+  }
+};
+
+// Clipboard Paste Interceptor for instant screenshot scanning
+window.addEventListener('paste', function(e) {
+  const items = (e.clipboardData || window.clipboardData)?.items;
+  if (!items) return;
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type && items[i].type.indexOf('image') !== -1) {
+      const file = items[i].getAsFile();
+      if (file) {
+        e.preventDefault();
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast("📋 Captured QR image from clipboard!", "info", 2000);
+        }
+        window.openBarcodeScannerModal('upload');
+        setTimeout(() => {
+          window.handleDeviceQrFile(file, 'clipboard_paste');
+        }, 100);
+        break;
+      }
+    }
+  }
+});
+
+window.testSampleInvoiceQrUpload = function() {
+  const testInv = (typeof invoicesDb !== "undefined" && invoicesDb.length > 0)
+    ? invoicesDb[0]
+    : { invoiceNo: "INV-2026-0001", total: 3599, paidAmount: 1599, balanceDue: 2000, buyerName: "Devi Fisheries" };
+
+  const testUrl = (typeof window.generateInvoiceVerificationUrl === "function")
+    ? window.generateInvoiceVerificationUrl(testInv.invoiceNo, testInv)
+    : `https://aaryanaqua.netlify.app/?verify_invoice=${testInv.invoiceNo}`;
+
+  const canvas = document.createElement("canvas");
+  if (typeof QRious !== "undefined") {
+    new QRious({
+      element: canvas,
+      value: testUrl,
+      size: 320,
+      level: 'H'
+    });
+    canvas.toBlob((blob) => {
+      if (blob) {
+        window.handleDeviceQrFile(blob, 'sample_test');
+      }
+    }, "image/png");
+  } else {
+    window.processAndRouteDecodedQr(testUrl, 'sample_test');
+  }
+};
+
+window.processAndRouteDecodedQr = function(rawCode, source = 'upload') {
+  if (!rawCode) return;
+  const clean = String(rawCode).trim();
+
+  // 1. Invoice Verification QR
   if (clean.includes("verify_invoice=") || clean.includes("/?verify_invoice=")) {
-    if (typeof window.closeBarcodeScannerModal === "function") window.closeBarcodeScannerModal();
+    window.closeBarcodeScannerModal();
     window.playScannerBeep();
     let invNo = clean;
     try {
       if (clean.includes("verify_invoice=")) {
         invNo = clean.split("verify_invoice=")[1].split("&")[0];
       }
-    } catch(e){}
+    } catch(e) {}
+    invNo = decodeURIComponent(invNo);
+
     if (typeof openInvoiceVerificationModal === "function") {
       openInvoiceVerificationModal(invNo);
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`🧾 Invoice #${invNo} loaded from device QR! Settle balance below.`, "success", 4000);
+      }
     }
+    return;
+  }
+
+  // 2. Product Barcode / SKU
+  let matched = (productsDb || []).find(p => p && p.barcode && String(p.barcode).trim() === clean);
+  if (!matched) {
+    matched = (productsDb || []).find(p => p && (String(p.id) === clean || (p.description && p.description.toLowerCase() === clean.toLowerCase())));
+  }
+
+  if (matched) {
+    window.closeBarcodeScannerModal();
+    window.playScannerBeep();
+    if (typeof selectSmartProduct === 'function') {
+      selectSmartProduct(matched);
+    }
+    setTimeout(() => {
+      if (typeof addItemToBillingTable === 'function') {
+        addItemToBillingTable();
+      }
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`📦 Added "${matched.description}" via Device QR!`, "success", 3500);
+      }
+    }, 120);
+    return;
+  }
+
+  // 3. P2P Mesh Sync PIN
+  if (clean.includes("sync_pin=")) {
+    window.closeBarcodeScannerModal();
+    window.playScannerBeep();
+    try {
+      const pin = clean.split("sync_pin=")[1].split("&")[0];
+      const pinInput = document.getElementById("p2p-input-pin");
+      if (pinInput) pinInput.value = pin;
+      if (typeof joinSyncPairing === "function") joinSyncPairing();
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`🔗 Joined EMQX P2P Mesh with PIN: ${pin}`, "success", 4000);
+      }
+      return;
+    } catch(e) {}
+  }
+
+  // 4. UPI Payment
+  if (clean.startsWith("upi://pay")) {
+    window.closeBarcodeScannerModal();
+    window.playScannerBeep();
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("💳 UPI Payment QR detected!", "info", 3500);
+    }
+    return;
+  }
+
+  // 5. Default fallback
+  window.handleScannedBarcode(clean);
+};
+
+window.handleScannedBarcode = function(code) {
+  if (!code) return;
+  const clean = String(code).trim();
+
+  // Intercept Invoice Verification QR scans
+  if (clean.includes("verify_invoice=") || clean.includes("/?verify_invoice=")) {
+    window.processAndRouteDecodedQr(clean, 'camera');
     return;
   }
 
@@ -4925,7 +5480,7 @@ window.handleScannedBarcode = function(code) {
         addItemToBillingTable();
       }
       if (typeof showFloatingToast === 'function') {
-        showFloatingToast(`📦 Added "${matched.description}" via Barcode Scan!`, 3500);
+        showFloatingToast(`📦 Added "${matched.description}" via Barcode Scan!`, "success", 3500);
       }
     }, 120);
   } else {

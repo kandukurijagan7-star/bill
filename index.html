@@ -23,6 +23,13 @@
       document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.5/mqtt.min.js"><\/script>');
     }
   </script>
+  <!-- Real-Time Client-Side QR & Barcode Decoder for Device Image Uploads -->
+  <script src="jsqr.min.js"></script>
+  <script>
+    if (typeof jsQR === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
+    }
+  </script>
   <!-- PWA Manifest & App Icons -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/jpeg" href="lord_ganesha.jpg">
@@ -259,8 +266,8 @@
             <button class="btn btn-cyan btn-hero" onclick="switchTab('billing')">
               <i class="fa-solid fa-plus"></i> New GST Bill
             </button>
-            <button class="btn btn-secondary btn-hero" onclick="openBarcodeScannerModal()" title="Scan Bill QR or Barcode to Settle Payment">
-              <i class="fa-solid fa-qrcode"></i> Scan Bill / Pay
+            <button class="btn btn-secondary btn-hero" onclick="openBarcodeScannerModal()" title="Scan or Upload Bill QR / Barcode to Settle Payment">
+              <i class="fa-solid fa-qrcode"></i> Scan / Upload QR
             </button>
             <button class="btn btn-secondary btn-hero" onclick="switchTab('products')">
               <i class="fa-solid fa-cubes"></i> Add Product
@@ -1818,8 +1825,8 @@
         <p style="margin: 4px 0 0; font-size: 13px; opacity: 0.95;">Synced to Google Sheets &amp; Database</p>
       </div>
 
-      <div style="padding: 20px 24px; text-align: left;">
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px;">
+      <div class="modal-body" style="padding: 16px 24px; text-align: left; flex: 1 1 auto; overflow-y: auto; min-height: 0;">
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; margin-bottom: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <span style="color: #64748b; font-size: 13px; font-weight: 600;">INVOICE NUMBER</span>
             <strong id="modal-success-inv-no" style="color: #0f172a; font-size: 16px; font-weight: 800;">#0001</strong>
@@ -1855,20 +1862,20 @@
           </button>
         </div>
 
-        <div style="margin-bottom: 14px;">
+        <div style="margin-bottom: 4px;">
           <button type="button" class="btn btn-secondary" onclick="triggerSuccessModalUniversalShare()" style="width: 100%; padding: 10px; font-weight: 700; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;">
             <i class="fa-solid fa-share-nodes text-emerald"></i> Universal Share (Nearby / Email / Copy)
           </button>
         </div>
+      </div>
 
-        <div style="display: flex; gap: 10px; border-top: 1px solid #e2e8f0; padding-top: 14px;">
-          <button type="button" class="btn btn-secondary" onclick="closeInvoiceSuccessModal(true)" style="flex: 1; padding: 10px; font-weight: 700;">
-            <i class="fa-solid fa-list-check"></i> View History
-          </button>
-          <button type="button" class="btn btn-primary" onclick="closeInvoiceSuccessModal(false)" style="flex: 1; padding: 10px; font-weight: 700; background: #0f172a;">
-            <i class="fa-solid fa-plus"></i> New Invoice
-          </button>
-        </div>
+      <div class="modal-footer" style="display: flex; gap: 10px; border-top: 1px solid #e2e8f0; padding: 12px 20px; background: #f8fafc; flex-shrink: 0;">
+        <button type="button" class="btn btn-secondary" onclick="closeInvoiceSuccessModal(true)" style="flex: 1; padding: 10px; font-weight: 700;">
+          <i class="fa-solid fa-list-check"></i> View History
+        </button>
+        <button type="button" class="btn btn-primary" onclick="closeInvoiceSuccessModal(false)" style="flex: 1; padding: 10px; font-weight: 700; background: #0f172a;">
+          <i class="fa-solid fa-plus"></i> New Invoice
+        </button>
       </div>
     </div>
   </div>
@@ -1881,133 +1888,135 @@
         <h3 id="product-modal-title">Add New Product</h3>
         <button type="button" class="modal-close" onclick="closeProductModal()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
       </div>
-      <form id="modal-product-form" onsubmit="saveProductModal(event)" class="form-grid">
-        <input type="hidden" id="modal-prod-id">
-        <div class="form-group col-12">
-          <label for="modal-prod-desc">Description of Goods</label>
-          <input type="text" id="modal-prod-desc" required placeholder="e.g. RALLIMIN ADV +">
-        </div>
-        <div class="form-group col-12">
-          <label for="modal-prod-hsn">HSN / SAC</label>
-          <input type="text" id="modal-prod-hsn" placeholder="e.g. 23099090">
-        </div>
-        <div class="form-group">
-          <label for="modal-prod-pack">Pack Size</label>
-          <input type="text" id="modal-prod-pack" placeholder="e.g. 15 KG">
-        </div>
-        <div class="form-group">
-          <label for="modal-prod-unit">Unit</label>
-          <input type="text" id="modal-prod-unit" placeholder="e.g. Bucket" value="Bucket">
-        </div>
-        <div class="form-group">
-          <label for="modal-prod-rate">Selling Rate (₹)</label>
-          <input type="number" step="0.01" id="modal-prod-rate" required placeholder="3599.00" oninput="calculateProductModalValues()">
-        </div>
-        <div class="form-group">
-          <label for="modal-prod-cost">Cost / Purchase Rate (₹)</label>
-          <input type="number" step="0.01" id="modal-prod-cost" placeholder="e.g. 2800.00" oninput="calculateProductModalValues()">
-        </div>
-        <div class="form-group">
-          <label for="modal-prod-discount">Default Discount (%)</label>
-          <input type="number" step="0.01" id="modal-prod-discount" value="0" oninput="calculateProductModalValues()">
-        </div>
-        <div class="form-group">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <label for="modal-prod-barcode" style="margin: 0;">Barcode / SKU</label>
-            <button type="button" onclick="generateRandomBarcodeForModal()" style="border: none; background: none; color: #0891b2; font-size: 10.5px; font-weight: 700; cursor: pointer; padding: 0;">
-              <i class="fa-solid fa-wand-magic-sparkles"></i> Auto Generate
-            </button>
+      <form id="modal-product-form" onsubmit="saveProductModal(event)" style="display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; margin: 0;">
+        <div class="modal-body form-grid" style="flex: 1 1 auto; overflow-y: auto; padding: 18px 20px; min-height: 0;">
+          <input type="hidden" id="modal-prod-id">
+          <div class="form-group col-12">
+            <label for="modal-prod-desc">Description of Goods</label>
+            <input type="text" id="modal-prod-desc" required placeholder="e.g. RALLIMIN ADV +">
           </div>
-          <input type="text" id="modal-prod-barcode" placeholder="e.g. 8901234567890">
-        </div>
-        <!-- Real-World Business Stock Management System -->
-        <div id="modal-stock-section" class="col-12 stock-management-card">
-          <!-- NEW PRODUCT MODE: Initial Opening Stock -->
-          <div id="modal-new-stock-group" class="form-group col-12" style="margin-bottom: 0;">
-            <label for="modal-prod-stock">Initial Opening Stock Quantity</label>
-            <input type="number" id="modal-prod-stock" value="0" min="0" required placeholder="e.g. 50" oninput="calculateProductModalValues()">
-            <small class="text-muted" style="font-size: 11px; margin-top: 3px; display: block;">Initial quantity available in warehouse.</small>
+          <div class="form-group col-12">
+            <label for="modal-prod-hsn">HSN / SAC</label>
+            <input type="text" id="modal-prod-hsn" placeholder="e.g. 23099090">
           </div>
+          <div class="form-group">
+            <label for="modal-prod-pack">Pack Size</label>
+            <input type="text" id="modal-prod-pack" placeholder="e.g. 15 KG">
+          </div>
+          <div class="form-group">
+            <label for="modal-prod-unit">Unit</label>
+            <input type="text" id="modal-prod-unit" placeholder="e.g. Bucket" value="Bucket">
+          </div>
+          <div class="form-group">
+            <label for="modal-prod-rate">Selling Rate (₹)</label>
+            <input type="number" step="0.01" id="modal-prod-rate" required placeholder="3599.00" oninput="calculateProductModalValues()">
+          </div>
+          <div class="form-group">
+            <label for="modal-prod-cost">Cost / Purchase Rate (₹)</label>
+            <input type="number" step="0.01" id="modal-prod-cost" placeholder="e.g. 2800.00" oninput="calculateProductModalValues()">
+          </div>
+          <div class="form-group">
+            <label for="modal-prod-discount">Default Discount (%)</label>
+            <input type="number" step="0.01" id="modal-prod-discount" value="0" oninput="calculateProductModalValues()">
+          </div>
+          <div class="form-group">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <label for="modal-prod-barcode" style="margin: 0;">Barcode / SKU</label>
+              <button type="button" onclick="generateRandomBarcodeForModal()" style="border: none; background: none; color: #0891b2; font-size: 10.5px; font-weight: 700; cursor: pointer; padding: 0;">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Auto Generate
+              </button>
+            </div>
+            <input type="text" id="modal-prod-barcode" placeholder="e.g. 8901234567890">
+          </div>
+          <!-- Real-World Business Stock Management System -->
+          <div id="modal-stock-section" class="col-12 stock-management-card">
+            <!-- NEW PRODUCT MODE: Initial Opening Stock -->
+            <div id="modal-new-stock-group" class="form-group col-12" style="margin-bottom: 0;">
+              <label for="modal-prod-stock">Initial Opening Stock Quantity</label>
+              <input type="number" id="modal-prod-stock" value="0" min="0" required placeholder="e.g. 50" oninput="calculateProductModalValues()">
+              <small class="text-muted" style="font-size: 11px; margin-top: 3px; display: block;">Initial quantity available in warehouse.</small>
+            </div>
 
-          <!-- EDIT PRODUCT MODE: Real-World Inward & Stock Reconciliation HUD -->
-          <div id="modal-edit-stock-group" class="hidden">
-            <!-- Existing Stock Display Banner -->
-            <div class="existing-stock-hud">
-              <div class="hud-left">
-                <i class="fa-solid fa-warehouse text-teal" style="font-size: 20px;"></i>
-                <div>
-                  <span class="hud-title">CURRENT WAREHOUSE STOCK</span>
-                  <div class="hud-stock-val">
-                    <strong id="modal-existing-stock-display">0</strong>
-                    <span id="modal-existing-unit" style="font-size: 13px; color: #64748b; font-weight: 600; margin-left: 4px;">Buckets</span>
+            <!-- EDIT PRODUCT MODE: Real-World Inward & Stock Reconciliation HUD -->
+            <div id="modal-edit-stock-group" class="hidden">
+              <!-- Existing Stock Display Banner -->
+              <div class="existing-stock-hud">
+                <div class="hud-left">
+                  <i class="fa-solid fa-warehouse text-teal" style="font-size: 20px;"></i>
+                  <div>
+                    <span class="hud-title">CURRENT WAREHOUSE STOCK</span>
+                    <div class="hud-stock-val">
+                      <strong id="modal-existing-stock-display">0</strong>
+                      <span id="modal-existing-unit" style="font-size: 13px; color: #64748b; font-weight: 600; margin-left: 4px;">Buckets</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div class="hud-badge" id="modal-stock-status-pill">
-                <span class="status-dot"></span> <span id="modal-stock-status-text">In Stock</span>
-              </div>
-            </div>
-
-            <!-- Stock Mode Switcher: Add Stock vs Direct Adjustment -->
-            <div class="stock-action-tabs">
-              <button type="button" id="tab-stock-mode-add" class="stock-tab-btn active" onclick="setProductStockMode('add')">
-                <i class="fa-solid fa-plus"></i> Add New Stock (Inward)
-              </button>
-              <button type="button" id="tab-stock-mode-adjust" class="stock-tab-btn" onclick="setProductStockMode('adjust')">
-                <i class="fa-solid fa-sliders"></i> Audit / Direct Set
-              </button>
-            </div>
-
-            <!-- Mode A: Add New Stock (Inward) -->
-            <div id="stock-mode-add-panel" class="stock-panel">
-              <label for="modal-prod-add-stock" style="font-weight: 700; color: #0284c7; font-size: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <span><i class="fa-solid fa-truck-ramp-box"></i> ADD NEW STOCK RECEIVED (+)</span>
-                <span style="font-weight: 500; font-size: 11px; color: #64748b;">Leave at 0 if no new stock</span>
-              </label>
-              <div class="input-with-action">
-                <input type="number" id="modal-prod-add-stock" value="0" min="0" placeholder="0" oninput="calculateProductModalValues()">
-                <div class="quick-add-pills">
-                  <button type="button" class="pill-add-btn" onclick="quickAddStockToInput(5)">+5</button>
-                  <button type="button" class="pill-add-btn" onclick="quickAddStockToInput(10)">+10</button>
-                  <button type="button" class="pill-add-btn" onclick="quickAddStockToInput(25)">+25</button>
-                  <button type="button" class="pill-add-btn" onclick="quickAddStockToInput(50)">+50</button>
+                <div class="hud-badge" id="modal-stock-status-pill">
+                  <span class="status-dot"></span> <span id="modal-stock-status-text">In Stock</span>
                 </div>
               </div>
-              <small style="font-size: 11px; color: #64748b; display: block; margin-top: 5px;">
-                💡 <strong>How it works:</strong> Entering a number will take your existing stock and <strong>ADD</strong> this new quantity to it. If left at 0, your existing stock remains untouched.
-              </small>
+
+              <!-- Stock Mode Switcher: Add Stock vs Direct Adjustment -->
+              <div class="stock-action-tabs">
+                <button type="button" id="tab-stock-mode-add" class="stock-tab-btn active" onclick="setProductStockMode('add')">
+                  <i class="fa-solid fa-plus"></i> Add New Stock (Inward)
+                </button>
+                <button type="button" id="tab-stock-mode-adjust" class="stock-tab-btn" onclick="setProductStockMode('adjust')">
+                  <i class="fa-solid fa-sliders"></i> Audit / Direct Set
+                </button>
+              </div>
+
+              <!-- Mode A: Add New Stock (Inward) -->
+              <div id="stock-mode-add-panel" class="stock-panel">
+                <label for="modal-prod-add-stock" style="font-weight: 700; color: #0284c7; font-size: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <span><i class="fa-solid fa-truck-ramp-box"></i> ADD NEW STOCK RECEIVED (+)</span>
+                  <span style="font-weight: 500; font-size: 11px; color: #64748b;">Leave at 0 if no new stock</span>
+                </label>
+                <div class="input-with-action">
+                  <input type="number" id="modal-prod-add-stock" value="0" min="0" placeholder="0" oninput="calculateProductModalValues()">
+                  <div class="quick-add-pills">
+                    <button type="button" class="pill-add-btn" onclick="quickAddStockToInput(5)">+5</button>
+                    <button type="button" class="pill-add-btn" onclick="quickAddStockToInput(10)">+10</button>
+                    <button type="button" class="pill-add-btn" onclick="quickAddStockToInput(25)">+25</button>
+                    <button type="button" class="pill-add-btn" onclick="quickAddStockToInput(50)">+50</button>
+                  </div>
+                </div>
+                <small style="font-size: 11px; color: #64748b; display: block; margin-top: 5px;">
+                  💡 <strong>How it works:</strong> Entering a number will take your existing stock and <strong>ADD</strong> this new quantity to it. If left at 0, your existing stock remains untouched.
+                </small>
+              </div>
+
+              <!-- Mode B: Direct Stock Adjustment / Physical Audit -->
+              <div id="stock-mode-adjust-panel" class="stock-panel hidden">
+                <label for="modal-prod-adjust-stock" style="font-weight: 700; color: #d97706; font-size: 12px; margin-bottom: 6px; display: block;">
+                  <i class="fa-solid fa-clipboard-check"></i> DIRECT PHYSICAL COUNT / INVENTORY AUDIT
+                </label>
+                <input type="number" id="modal-prod-adjust-stock" min="0" placeholder="e.g. 50" oninput="calculateProductModalValues()">
+                <small style="font-size: 11px; color: #64748b; display: block; margin-top: 5px;">
+                  ⚠️ Directly sets the absolute warehouse count (use for physical inventory audits, damage write-offs, or reconciliation).
+                </small>
+              </div>
             </div>
 
-            <!-- Mode B: Direct Stock Adjustment / Physical Audit -->
-            <div id="stock-mode-adjust-panel" class="stock-panel hidden">
-              <label for="modal-prod-adjust-stock" style="font-weight: 700; color: #d97706; font-size: 12px; margin-bottom: 6px; display: block;">
-                <i class="fa-solid fa-clipboard-check"></i> DIRECT PHYSICAL COUNT / INVENTORY AUDIT
-              </label>
-              <input type="number" id="modal-prod-adjust-stock" min="0" placeholder="e.g. 50" oninput="calculateProductModalValues()">
-              <small style="font-size: 11px; color: #64748b; display: block; margin-top: 5px;">
-                ⚠️ Directly sets the absolute warehouse count (use for physical inventory audits, damage write-offs, or reconciliation).
-              </small>
-            </div>
-          </div>
-
-          <!-- Dynamic Live Breakdown & Valuation Card -->
-          <div class="stock-breakdown-card">
-            <div class="breakdown-row">
-              <span class="breakdown-label"><i class="fa-solid fa-boxes-stacked text-teal"></i> Final Resulting Stock:</span>
-              <strong id="modal-resulting-stock" class="breakdown-val text-teal">0 Units</strong>
-            </div>
-            <div class="breakdown-row">
-              <span class="breakdown-label"><i class="fa-solid fa-tag text-emerald"></i> Net Price (After Discount):</span>
-              <strong id="modal-preview-val-after-disc" class="breakdown-val text-emerald">₹ 0.00</strong>
-            </div>
-            <div class="breakdown-row total-row">
-              <span class="breakdown-label"><i class="fa-solid fa-calculator text-blue"></i> Total Warehouse Inventory Valuation:</span>
-              <strong id="modal-preview-total-val" class="breakdown-val-lg">₹ 0.00</strong>
+            <!-- Dynamic Live Breakdown & Valuation Card -->
+            <div class="stock-breakdown-card">
+              <div class="breakdown-row">
+                <span class="breakdown-label"><i class="fa-solid fa-boxes-stacked text-teal"></i> Final Resulting Stock:</span>
+                <strong id="modal-resulting-stock" class="breakdown-val text-teal">0 Units</strong>
+              </div>
+              <div class="breakdown-row">
+                <span class="breakdown-label"><i class="fa-solid fa-tag text-emerald"></i> Net Price (After Discount):</span>
+                <strong id="modal-preview-val-after-disc" class="breakdown-val text-emerald">₹ 0.00</strong>
+              </div>
+              <div class="breakdown-row total-row">
+                <span class="breakdown-label"><i class="fa-solid fa-calculator text-blue"></i> Total Warehouse Inventory Valuation:</span>
+                <strong id="modal-preview-total-val" class="breakdown-val-lg">₹ 0.00</strong>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="form-group col-12 flex-row gap-10 margin-top-20 justify-end">
+        <div class="modal-footer flex-row gap-10 justify-end" style="flex-shrink: 0; padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; margin: 0;">
           <button type="button" class="btn btn-secondary" onclick="closeProductModal()">Cancel</button>
           <button type="submit" class="btn btn-primary">Save Product</button>
         </div>
@@ -2022,44 +2031,46 @@
         <h3 id="party-modal-title">Add Party Profile</h3>
         <button type="button" class="modal-close" onclick="closePartyModal()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
       </div>
-      <form id="modal-party-form" onsubmit="savePartyModal(event)" class="form-grid">
-        <input type="hidden" id="modal-party-id">
-        <div class="form-group col-12">
-          <label for="modal-party-type">Party Classification</label>
-          <select id="modal-party-type">
-            <option value="receiver">Receiver (Bill To)</option>
-            <option value="consignee">Consignee (Ship To)</option>
-          </select>
+      <form id="modal-party-form" onsubmit="savePartyModal(event)" style="display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; margin: 0;">
+        <div class="modal-body form-grid" style="flex: 1 1 auto; overflow-y: auto; padding: 18px 20px; min-height: 0;">
+          <input type="hidden" id="modal-party-id">
+          <div class="form-group col-12">
+            <label for="modal-party-type">Party Classification</label>
+            <select id="modal-party-type">
+              <option value="receiver">Receiver (Bill To)</option>
+              <option value="consignee">Consignee (Ship To)</option>
+            </select>
+          </div>
+          <div class="form-group col-12">
+            <label for="modal-party-name">Customer Name</label>
+            <input type="text" id="modal-party-name" required placeholder="e.g. DEVI FISHERIES LIMITED">
+          </div>
+          <div class="form-group col-12">
+            <label for="modal-party-company">Company Name</label>
+            <input type="text" id="modal-party-company" placeholder="Optional">
+          </div>
+          <div class="form-group col-12">
+            <label for="modal-party-address">Billing Address</label>
+            <textarea id="modal-party-address" rows="3" required placeholder="Full physical address"></textarea>
+          </div>
+          <div class="form-group col-12">
+            <label for="modal-party-gstin">GSTIN/UIN</label>
+            <input type="text" id="modal-party-gstin" placeholder="GSTIN code">
+          </div>
+          <div class="form-group">
+            <label for="modal-party-state">State Name</label>
+            <input type="text" id="modal-party-state" value="Andhra Pradesh">
+          </div>
+          <div class="form-group">
+            <label for="modal-party-state-code">State Code</label>
+            <input type="text" id="modal-party-state-code" value="37">
+          </div>
+          <div class="form-group col-12">
+            <label for="modal-party-phone">Phone Number</label>
+            <input type="text" id="modal-party-phone" placeholder="Phone number">
+          </div>
         </div>
-        <div class="form-group col-12">
-          <label for="modal-party-name">Customer Name</label>
-          <input type="text" id="modal-party-name" required placeholder="e.g. DEVI FISHERIES LIMITED">
-        </div>
-        <div class="form-group col-12">
-          <label for="modal-party-company">Company Name</label>
-          <input type="text" id="modal-party-company" placeholder="Optional">
-        </div>
-        <div class="form-group col-12">
-          <label for="modal-party-address">Billing Address</label>
-          <textarea id="modal-party-address" rows="3" required placeholder="Full physical address"></textarea>
-        </div>
-        <div class="form-group col-12">
-          <label for="modal-party-gstin">GSTIN/UIN</label>
-          <input type="text" id="modal-party-gstin" placeholder="GSTIN code">
-        </div>
-        <div class="form-group">
-          <label for="modal-party-state">State Name</label>
-          <input type="text" id="modal-party-state" value="Andhra Pradesh">
-        </div>
-        <div class="form-group">
-          <label for="modal-party-state-code">State Code</label>
-          <input type="text" id="modal-party-state-code" value="37">
-        </div>
-        <div class="form-group col-12">
-          <label for="modal-party-phone">Phone Number</label>
-          <input type="text" id="modal-party-phone" placeholder="Phone number">
-        </div>
-        <div class="form-group col-12 flex-row gap-10 margin-top-20 justify-end">
+        <div class="modal-footer flex-row gap-10 justify-end" style="flex-shrink: 0; padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; margin: 0;">
           <button type="button" class="btn btn-secondary" onclick="closePartyModal()">Cancel</button>
           <button type="submit" class="btn btn-primary">Save Profile</button>
         </div>
@@ -2500,54 +2511,138 @@
 
   <!-- LIVE BARCODE & QR CAMERA SCANNER MODAL -->
   <div id="barcode-scanner-modal" class="modal-overlay hidden no-print" onclick="if(event.target === this) closeBarcodeScannerModal();" style="z-index: 2147483647;">
-    <div class="modal-box" style="max-width: 440px; width: 92%; background: #0f172a; color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6);">
-      <div class="modal-header" style="background: #1e293b; color: #ffffff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1);">
+    <div class="modal-box" style="max-width: 470px; width: 92%; background: #0f172a; color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); display: flex; flex-direction: column; max-height: calc(100vh - 28px); max-height: calc(100dvh - 28px);">
+      <div class="modal-header" style="background: #1e293b; color: #ffffff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
         <div style="display: flex; align-items: center; gap: 10px;">
           <div style="width: 34px; height: 34px; background: rgba(8,145,178,0.2); color: #06b6d4; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px;">
-            <i class="fa-solid fa-barcode"></i>
+            <i class="fa-solid fa-qrcode"></i>
           </div>
           <div>
-            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #ffffff;">Barcode &amp; QR Scanner</h3>
-            <span style="font-size: 11px; color: #94a3b8;">Point camera at product barcode</span>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #ffffff;">Barcode &amp; QR Center</h3>
+            <span style="font-size: 11px; color: #94a3b8;">Point Camera or Upload Image File</span>
           </div>
         </div>
         <button type="button" class="modal-close-btn" onclick="closeBarcodeScannerModal()" aria-label="Close" style="color: #cbd5e1; background: rgba(255,255,255,0.1); border: none; font-size: 18px; cursor: pointer; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
+
+      <!-- SCANNER NAVIGATION TABS -->
+      <div style="display: flex; background: #0b1120; border-bottom: 1px solid rgba(255,255,255,0.1); padding: 6px 8px; gap: 6px; flex-shrink: 0;">
+        <button type="button" id="scanner-tab-btn-camera" class="qr-scanner-tab-btn active" onclick="switchScannerTab('camera')">
+          <i class="fa-solid fa-camera"></i> Live Camera
+        </button>
+        <button type="button" id="scanner-tab-btn-upload" class="qr-scanner-tab-btn" onclick="switchScannerTab('upload')">
+          <i class="fa-solid fa-cloud-arrow-up"></i> Upload from Device
+        </button>
+      </div>
       
-      <div class="modal-body" style="padding: 16px; text-align: center;">
-        <!-- Video Viewfinder Container with Targeting Reticle -->
-        <div style="position: relative; width: 100%; height: 260px; background: #020617; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-          <video id="barcode-scanner-video" playsinline autoplay muted style="width: 100%; height: 100%; object-fit: cover;"></video>
-          
-          <!-- Targeting Reticle & Laser Scan Line -->
-          <div style="position: absolute; width: 75%; height: 60%; border: 2px solid #06b6d4; border-radius: 12px; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);">
-            <div id="barcode-laser-line" style="position: absolute; top: 0; left: 0; right: 0; height: 2px; background: #06b6d4; box-shadow: 0 0 8px #06b6d4;"></div>
+      <div class="modal-body" style="padding: 16px; text-align: center; flex: 1 1 auto; overflow-y: auto; min-height: 0;">
+        <!-- TAB PANE 1: LIVE CAMERA SCANNER -->
+        <div id="scanner-tab-camera-pane" style="display: block;">
+          <!-- Video Viewfinder Container with Targeting Reticle -->
+          <div style="position: relative; width: 100%; height: 250px; background: #020617; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+            <video id="barcode-scanner-video" playsinline autoplay muted style="width: 100%; height: 100%; object-fit: cover;"></video>
+            
+            <!-- Targeting Reticle & Laser Scan Line -->
+            <div style="position: absolute; width: 75%; height: 60%; border: 2px solid #06b6d4; border-radius: 12px; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);">
+              <div id="barcode-laser-line" style="position: absolute; top: 0; left: 0; right: 0; height: 2px; background: #06b6d4; box-shadow: 0 0 8px #06b6d4;"></div>
+            </div>
+            
+            <!-- Camera Status Overlay -->
+            <div id="barcode-camera-status" style="position: absolute; bottom: 8px; left: 8px; right: 8px; font-size: 11px; background: rgba(0,0,0,0.75); padding: 5px 8px; border-radius: 6px; color: #cbd5e1;">
+              Initializing camera...
+            </div>
           </div>
-          
-          <!-- Camera Status Overlay -->
-          <div id="barcode-camera-status" style="position: absolute; bottom: 8px; left: 8px; right: 8px; font-size: 11px; background: rgba(0,0,0,0.7); padding: 5px 8px; border-radius: 6px; color: #cbd5e1;">
-            Initializing camera...
+
+          <!-- Controls: Flip Camera / Torch -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 8px;">
+            <button type="button" class="btn btn-sm" onclick="toggleCameraTorch()" id="btn-camera-torch" style="flex: 1; background: #334155; color: #ffffff; border: none; border-radius: 8px; padding: 8px; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
+              <i class="fa-solid fa-lightbulb"></i> Torch
+            </button>
+            <button type="button" class="btn btn-sm" onclick="toggleCameraFacing()" id="btn-camera-flip" style="flex: 1; background: #334155; color: #ffffff; border: none; border-radius: 8px; padding: 8px; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
+              <i class="fa-solid fa-camera-rotate"></i> Flip Camera
+            </button>
+          </div>
+
+          <!-- Manual Barcode Input Fallback -->
+          <div style="margin-top: 14px; text-align: left; background: #1e293b; padding: 10px 12px; border-radius: 10px;">
+            <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">Or enter barcode / SKU manually:</label>
+            <div style="display: flex; gap: 6px;">
+              <input type="text" id="manual-barcode-input" placeholder="Type or scan barcode numbers..." style="flex: 1; background: #0f172a; border: 1px solid #475569; color: white; border-radius: 6px; padding: 6px 10px; font-size: 12px; outline: none;" onkeydown="if(event.key === 'Enter'){ submitManualBarcode(); }">
+              <button type="button" class="btn btn-sm btn-cyan" onclick="submitManualBarcode()" style="padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer;">Add</button>
+            </div>
           </div>
         </div>
 
-        <!-- Controls: Flip Camera / Torch -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 8px;">
-          <button type="button" class="btn btn-sm" onclick="toggleCameraTorch()" id="btn-camera-torch" style="flex: 1; background: #334155; color: #ffffff; border: none; border-radius: 8px; padding: 8px; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
-            <i class="fa-solid fa-lightbulb"></i> Torch
-          </button>
-          <button type="button" class="btn btn-sm" onclick="toggleCameraFacing()" id="btn-camera-flip" style="flex: 1; background: #334155; color: #ffffff; border: none; border-radius: 8px; padding: 8px; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
-            <i class="fa-solid fa-camera-rotate"></i> Flip Camera
-          </button>
-        </div>
+        <!-- TAB PANE 2: ADVANCED REAL-TIME DEVICE UPLOAD -->
+        <div id="scanner-tab-upload-pane" style="display: none; text-align: center;">
+          <!-- Drag & Drop Dropzone -->
+          <div id="qr-dropzone" class="qr-dropzone" ondragover="handleQrDropOver(event)" ondragleave="handleQrDropLeave(event)" ondrop="handleQrDrop(event)" onclick="document.getElementById('qr-device-file-input').click()">
+            <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(6, 182, 212, 0.15); color: #06b6d4; display: flex; align-items: center; justify-content: center; font-size: 24px; margin: 0 auto 10px auto;">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+            </div>
+            <h4 style="margin: 0 0 4px 0; font-size: 14px; font-weight: 700; color: #ffffff;">Choose Image or Drag &amp; Drop QR Here</h4>
+            <p style="margin: 0 0 12px 0; font-size: 11.5px; color: #94a3b8;">Instant real-time multi-pass decoding from device storage</p>
 
-        <!-- Manual Barcode Input Fallback -->
-        <div style="margin-top: 14px; text-align: left; background: #1e293b; padding: 10px 12px; border-radius: 10px;">
-          <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">Or enter barcode / SKU manually:</label>
-          <div style="display: flex; gap: 6px;">
-            <input type="text" id="manual-barcode-input" placeholder="Type or scan barcode numbers..." style="flex: 1; background: #0f172a; border: 1px solid #475569; color: white; border-radius: 6px; padding: 6px 10px; font-size: 12px; outline: none;" onkeydown="if(event.key === 'Enter'){ submitManualBarcode(); }">
-            <button type="button" class="btn btn-sm btn-cyan" onclick="submitManualBarcode()" style="padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer;">Add</button>
+            <div style="display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;">
+              <button type="button" class="btn btn-sm btn-cyan" onclick="event.stopPropagation(); document.getElementById('qr-device-file-input').click();" style="padding: 7px 14px; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-folder-open"></i> Browse Files / Photos
+              </button>
+              <button type="button" class="btn btn-sm" onclick="event.stopPropagation(); document.getElementById('qr-device-camera-input').click();" style="background: #334155; color: #ffffff; border: none; padding: 7px 14px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-camera"></i> Snap Photo
+              </button>
+            </div>
+
+            <div style="margin-top: 12px; font-size: 11px; color: #94a3b8; background: rgba(255,255,255,0.06); padding: 5px 12px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
+              <i class="fa-regular fa-clipboard text-cyan"></i> Tip: Press <kbd style="background: #1e293b; color: #38bdf8; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; border: 1px solid rgba(255,255,255,0.1);">Ctrl + V</kbd> to paste screenshot
+            </div>
+
+            <!-- Hidden file inputs -->
+            <input type="file" id="qr-device-file-input" accept="image/*" style="display: none;" onchange="handleDeviceQrFileInput(event)">
+            <input type="file" id="qr-device-camera-input" accept="image/*" capture="environment" style="display: none;" onchange="handleDeviceQrFileInput(event)">
+          </div>
+
+          <!-- Real-Time Processing & Preview Card -->
+          <div id="qr-upload-preview-wrap" style="display: none; margin-top: 12px; background: #1e293b; border-radius: 12px; padding: 14px; border: 1px solid rgba(255,255,255,0.1); text-align: center;">
+            <div style="position: relative; width: 100%; height: 180px; background: #020617; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+              <img id="qr-upload-preview-img" src="" alt="QR Upload Preview" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+              <div id="qr-upload-laser" class="qr-laser-active" style="position: absolute; left: 0; right: 0; height: 2px; background: #06b6d4; box-shadow: 0 0 10px #06b6d4;"></div>
+            </div>
+
+            <div id="qr-upload-status-text" style="margin-top: 10px; font-size: 12px; font-weight: 600; color: #38bdf8;">
+              🔄 Analyzing image in real-time...
+            </div>
+
+            <!-- Success Card -->
+            <div id="qr-upload-result-card" style="display: none; margin-top: 10px; padding: 12px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; text-align: left;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span id="qr-result-type-badge" style="background: #059669; color: white; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700;">INVOICE QR</span>
+                <span id="qr-result-time-badge" style="font-size: 11px; color: #a7f3d0;">Decoded in 18ms</span>
+              </div>
+              <div id="qr-result-value" style="margin-top: 6px; font-family: monospace; font-size: 12px; word-break: break-all; color: #ffffff; max-height: 50px; overflow-y: auto;"></div>
+              <div style="display: flex; gap: 8px; margin-top: 10px;">
+                <button type="button" id="qr-result-action-btn" class="btn btn-sm btn-cyan" style="flex: 1; font-weight: 700;">Proceed</button>
+                <button type="button" class="btn btn-sm" onclick="resetDeviceQrUpload()" style="background: #334155; color: white; border: none; padding: 6px 12px; font-size: 11.5px; border-radius: 6px;">New Scan</button>
+              </div>
+            </div>
+
+            <!-- Error Card -->
+            <div id="qr-upload-error-card" style="display: none; margin-top: 10px; padding: 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; text-align: left;">
+              <div id="qr-upload-error-text" style="font-size: 12px; color: #fca5a5; line-height: 1.4;">
+                No QR code or barcode found. Please ensure good lighting and high contrast.
+              </div>
+              <button type="button" class="btn btn-sm" onclick="resetDeviceQrUpload()" style="margin-top: 8px; width: 100%; background: #334155; color: white; border: none; padding: 6px 12px; font-size: 11.5px; border-radius: 6px;">
+                <i class="fa-solid fa-rotate-left"></i> Try Another Image
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Test Helper -->
+          <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px; text-align: center;">
+            <button type="button" class="btn btn-xs" onclick="testSampleInvoiceQrUpload()" style="background: rgba(255,255,255,0.07); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.15); padding: 5px 12px; border-radius: 6px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+              <i class="fa-solid fa-vial text-cyan"></i> Test with Sample Bill QR
+            </button>
           </div>
         </div>
       </div>
@@ -2642,6 +2737,14 @@
           <div style="display: flex; gap: 8px;">
             <input type="text" id="verify-manual-search-input" class="form-control" placeholder="Enter Invoice No. (e.g. 0001)" style="flex: 1; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
             <button type="button" class="btn btn-primary" onclick="lookupManualInvoiceVerification()" style="padding: 8px 16px;"><i class="fa-solid fa-magnifying-glass"></i> Check</button>
+          </div>
+          <div style="margin-top: 12px; display: flex; gap: 8px; justify-content: center;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closeInvoiceVerificationModal(); openBarcodeScannerModal('upload');" style="flex: 1; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px;">
+              <i class="fa-solid fa-cloud-arrow-up text-cyan"></i> Upload Bill QR
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closeInvoiceVerificationModal(); openBarcodeScannerModal('camera');" style="flex: 1; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px;">
+              <i class="fa-solid fa-camera text-cyan"></i> Camera Scan
+            </button>
           </div>
         </div>
 
@@ -3856,7 +3959,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=341_live_dashboard_balance_settle"></script>
+  <script src="index_v5.js?v=343_auto_screen_fit_device_qr_upload"></script>
 </body>
 </html>
 
