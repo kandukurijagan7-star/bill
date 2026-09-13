@@ -64,7 +64,7 @@
       } catch (e) {}
     }
     // Build Version Enforcement: Clears stale caches when new build is deployed
-    window.__APP_BUILD_VERSION__ = "v345_invoice_delete_fix";
+    window.__APP_BUILD_VERSION__ = "v346_dynamic_screen_fit";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -78,7 +78,7 @@
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.google.com">
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=344_dashboard_screen_fit">
+  <link rel="stylesheet" href="index.css?v=346_dynamic_screen_fit">
   <script src="invoice_utils_v5.js?v=338_paid_reminder_symbol_fix"></script>
 </head>
 <body>
@@ -275,8 +275,8 @@
             <button class="btn btn-secondary btn-hero" onclick="switchTab('reports')">
               <i class="fa-solid fa-chart-pie"></i> View Reports
             </button>
-            <button class="btn btn-secondary btn-hero" id="dashboard-fit-toggle-btn" onclick="toggleDashboardScreenFit()" title="Toggle Screen-Fit Mode (Fits entire dashboard to your laptop / monitor height)">
-              <i class="fa-solid fa-compress" id="dashboard-fit-icon"></i> <span id="dashboard-fit-label">Fit Screen</span>
+            <button class="btn btn-cyan btn-hero" id="dashboard-fit-toggle-btn" onclick="toggleDashboardScreenFit()" title="Toggle View Mode (Dynamic Screen-Fit Active)">
+              <i class="fa-solid fa-expand" id="dashboard-fit-icon"></i> <span id="dashboard-fit-label">Fitted View</span>
             </button>
           </div>
         </div>
@@ -3973,7 +3973,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=345_invoice_delete_fix"></script>
+  <script src="index_v5.js?v=346_dynamic_screen_fit"></script>
 </body>
 </html>
 

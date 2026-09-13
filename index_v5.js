@@ -14140,15 +14140,15 @@ document.addEventListener("scroll", function(e) {
 window.updateDashboardOverview = updateDashboardOverview;
 window.updateDashboardStats = updateDashboardOverview;
 
-// Auto Screen-Fit Controller & Toggle for Dashboard
+// Universal Dynamic Screen-Fit Controller for Dashboard
 window.toggleDashboardScreenFit = function() {
   const dash = document.getElementById('view-dashboard');
   if (!dash) return;
-  const isFitted = dash.classList.toggle('dashboard-screen-fitted');
+  const isScrollMode = dash.classList.toggle('dashboard-scroll-mode');
   try {
-    localStorage.setItem('aaryan_dashboard_fit_screen', isFitted ? '1' : '0');
+    localStorage.setItem('aaryan_dashboard_view_mode', isScrollMode ? 'scroll' : 'fitted');
   } catch (e) {}
-  updateDashboardFitButton(isFitted);
+  updateDashboardFitButton(!isScrollMode);
 
   if (typeof salesChartInstance !== 'undefined' && salesChartInstance) {
     salesChartInstance.resize();
@@ -14157,7 +14157,7 @@ window.toggleDashboardScreenFit = function() {
     gstChartInstance.resize();
   }
   if (typeof showToast === 'function') {
-    showToast(isFitted ? "Auto Screen-Fit Mode: Dashboard adapted to screen" : "Standard Scroll View Restored", "info");
+    showToast(!isScrollMode ? "Dynamic Screen-Fit Active: Dashboard fitted to screen" : "Standard Scroll View Active", "info");
   }
 };
 
@@ -14175,19 +14175,36 @@ function updateDashboardFitButton(isFitted) {
     btn.classList.remove('btn-cyan');
     btn.classList.add('btn-secondary');
     if (icon) icon.className = 'fa-solid fa-compress';
-    if (label) label.textContent = 'Fit Screen';
+    if (label) label.textContent = 'Scroll View';
   }
 }
 
 function initDashboardScreenFit() {
   try {
-    const saved = localStorage.getItem('aaryan_dashboard_fit_screen');
-    if (saved === '1') {
-      const dash = document.getElementById('view-dashboard');
-      if (dash) dash.classList.add('dashboard-screen-fitted');
+    const dash = document.getElementById('view-dashboard');
+    const savedMode = localStorage.getItem('aaryan_dashboard_view_mode');
+    if (savedMode === 'scroll') {
+      if (dash) dash.classList.add('dashboard-scroll-mode');
+      updateDashboardFitButton(false);
+    } else {
+      if (dash) dash.classList.remove('dashboard-scroll-mode');
       updateDashboardFitButton(true);
     }
   } catch (e) {}
+
+  // Automatically recalculate chart sizes on any window resize or orientation change
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (typeof salesChartInstance !== 'undefined' && salesChartInstance) {
+        salesChartInstance.resize();
+      }
+      if (typeof gstChartInstance !== 'undefined' && gstChartInstance) {
+        gstChartInstance.resize();
+      }
+    }, 100);
+  });
 }
 
 if (document.readyState === 'loading') {
