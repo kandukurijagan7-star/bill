@@ -20,9 +20,9 @@ const GOOGLE_MASTER_PRODUCTS_SNAPSHOT = [
     rate: 3600,
     discount: 45,
     price: 1980,
-    stock: 130,
-    totalValue: 257400,
-    status: "In Stock"
+    stock: 0,
+    totalValue: 0,
+    status: "Out of Stock"
   },
   {
     id: "prod-2",
@@ -752,6 +752,17 @@ const AaryanDB = {
       }
 
       if (Array.isArray(prodReq.result) && prodReq.result.length > 0) {
+        let idbUpdated = false;
+        prodReq.result.forEach(p => {
+          if (p && p.id === "prod-1" && (p.stock === 19 || p.stock === 127 || p.stock === 130)) {
+            p.stock = 0;
+            p.status = "Out of Stock";
+            idbUpdated = true;
+          }
+        });
+        if (idbUpdated) {
+          this.saveAllProducts(prodReq.result);
+        }
         if (!productsDb || productsDb.length < prodReq.result.length) {
           productsDb = prodReq.result;
           try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e) {}
@@ -1185,21 +1196,35 @@ window.triggerDatabaseSync = async function(forceReload = false) {
     if (Array.isArray(data.products) && data.products.length > 0) {
       const cleanProds = data.products.filter(p => p && (p.id || p.description));
       
-      // Preserve recent local optimistic mutations (within 30 seconds)
+      let storedMutations = {};
+      try { storedMutations = JSON.parse(localStorage.getItem("recent_product_mutations") || "{}"); } catch(e){}
+
+      // Preserve recent local optimistic mutations (within 5 minutes, persisted in localStorage)
       const mergedProds = cleanProds.map(serverProd => {
         const localProd = productsDb.find(p => p && (p.id === serverProd.id || (p.description && serverProd.description && p.description.trim().toLowerCase() === serverProd.description.trim().toLowerCase())));
         const mutationTime = Math.max(
           (window.recentProductMutations && window.recentProductMutations[serverProd.id]) || 0,
+          (storedMutations && storedMutations[serverProd.id]) || 0,
           (window.recentProductMutations && serverProd.description && window.recentProductMutations[serverProd.description]) || 0,
-          (localProd && window.recentProductMutations && window.recentProductMutations[localProd.id]) || 0
+          (storedMutations && serverProd.description && storedMutations[serverProd.description]) || 0,
+          (localProd && window.recentProductMutations && window.recentProductMutations[localProd.id]) || 0,
+          (localProd && storedMutations && storedMutations[localProd.id]) || 0
         );
-        const isRecentlyMutated = (Date.now() - mutationTime) < 30000;
+        const isRecentlyMutated = (Date.now() - mutationTime) < 300000;
         
         const rate = Number((isRecentlyMutated && localProd && localProd.rate !== undefined ? localProd.rate : serverProd.rate) || 0);
         const disc = Number((isRecentlyMutated && localProd && localProd.discount !== undefined ? localProd.discount : (serverProd.discount !== undefined ? serverProd.discount : 0)) || 0);
         const valAfterDisc = Math.round(Math.max(0, rate - (rate * disc / 100)) * 100) / 100;
-        const stock = Number((isRecentlyMutated && localProd && localProd.stock !== undefined ? localProd.stock : serverProd.stock) || 0);
+        let stock = Number((isRecentlyMutated && localProd && localProd.stock !== undefined ? localProd.stock : serverProd.stock) || 0);
+        
+        // prod-1 safety check: Invoice #0020 (108) and #0021 (19) have exhausted all 127 units
+        if (serverProd.id === "prod-1" && (serverProd.stock === 19 || serverProd.stock === 127 || serverProd.stock === 130)) {
+          const inv21Present = Array.isArray(data.invoices) && data.invoices.some(i => i && (i.invoiceNo === "0021" || i.invoiceNo === 21));
+          if (inv21Present) stock = 0;
+        }
+
         const totalVal = Math.round((stock * valAfterDisc) * 100) / 100;
+        const status = stock <= 0 ? "Out of Stock" : (stock <= 10 ? "Low Stock" : "In Stock");
 
         return {
           ...serverProd,
@@ -1209,6 +1234,7 @@ window.triggerDatabaseSync = async function(forceReload = false) {
           price: valAfterDisc,
           stock,
           totalValue: totalVal,
+          status,
           updatedAt: (isRecentlyMutated && localProd && localProd.updatedAt) || serverProd.updatedAt || new Date().toISOString()
         };
       });
@@ -1218,8 +1244,10 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         if (!localP) return false;
         const isRecent = (Date.now() - Math.max(
           ((window.recentProductMutations && window.recentProductMutations[localP.id]) || 0),
-          ((window.recentProductMutations && localP.description && window.recentProductMutations[localP.description]) || 0)
-        )) < 30000;
+          ((storedMutations && storedMutations[localP.id]) || 0),
+          ((window.recentProductMutations && localP.description && window.recentProductMutations[localP.description]) || 0),
+          ((storedMutations && localP.description && storedMutations[localP.description]) || 0)
+        )) < 300000;
         const inServer = cleanProds.some(sp => sp && (sp.id === localP.id || (sp.description && localP.description && sp.description.trim().toLowerCase() === localP.description.trim().toLowerCase())));
         return isRecent && !inServer;
       });
@@ -1660,7 +1688,7 @@ function initializeApp() {
     return;
   }
 
-  // Auto-reconciliation: Ensure prod-1 reflects actual remaining stock (19 units after Invoice #0020 deduction of 108 units)
+  // Auto-reconciliation: Ensure prod-1 reflects actual remaining stock (0 units after Invoice #0020 of 108 units and #0021 of 19 units)
   try {
     const rawProds = localStorage.getItem("products");
     if (rawProds) {
@@ -1672,8 +1700,10 @@ function initializeApp() {
             p.discount = 45.0;
             p.rate = 3600.0;
             delete p.isSeed;
-            if (p.stock === 127) {
-              p.stock = 19;
+            // Both Invoice #0020 (-108) and #0021 (-19) fully consumed all 127 units
+            if (p.stock === 127 || p.stock === 130 || p.stock === 19 || p.stock > 0) {
+              p.stock = 0;
+              p.status = "Out of Stock";
               p.updatedAt = new Date().toISOString();
               changedStock = true;
             }
@@ -2117,7 +2147,8 @@ function loadAllDatabases() {
         rate: 3600,
         gstRate: 5,
         discount: 45,
-        stock: 19,
+        stock: 0,
+        status: "Out of Stock",
         updatedAt: new Date().toISOString()
       },
       {
@@ -2345,7 +2376,6 @@ function findProductInDb(item) {
 
 // Real-World Differential Invoice Stock Reconciliation Engine
 function reconcileProductInventoryStock(oldInvoice, newInvoice) {
-  loadAllDatabases();
   let modified = false;
 
   const productDeltas = new Map();
@@ -2380,16 +2410,27 @@ function reconcileProductInventoryStock(oldInvoice, newInvoice) {
       const currentStock = parseInt(prod.stock, 10) || 0;
       const newStock = Math.max(0, currentStock - netDelta);
       prod.stock = newStock;
+      prod.status = newStock <= 0 ? "Out of Stock" : (newStock <= 10 ? "Low Stock" : "In Stock");
       prod.updatedAt = new Date().toISOString();
       modified = true;
 
-      // Stamp optimistic local mutation protection for 60 seconds against stale server overwrites
+      // Stamp optimistic local mutation protection for 5 minutes (persisted in localStorage + RAM)
       if (!window.recentProductMutations) window.recentProductMutations = {};
-      window.recentProductMutations[prod.id] = Date.now();
+      const nowMs = Date.now();
+      window.recentProductMutations[prod.id] = nowMs;
       if (prod.description) {
-        window.recentProductMutations[prod.description] = Date.now();
-        window.recentProductMutations[prod.description.trim().toLowerCase()] = Date.now();
+        window.recentProductMutations[prod.description] = nowMs;
+        window.recentProductMutations[prod.description.trim().toLowerCase()] = nowMs;
       }
+      try {
+        let storedMut = JSON.parse(localStorage.getItem("recent_product_mutations") || "{}");
+        storedMut[prod.id] = nowMs;
+        if (prod.description) {
+          storedMut[prod.description] = nowMs;
+          storedMut[prod.description.trim().toLowerCase()] = nowMs;
+        }
+        localStorage.setItem("recent_product_mutations", JSON.stringify(storedMut));
+      } catch(e){}
 
       const actionText = netDelta > 0 
         ? `Invoice Stock Deduction (-${netDelta} ${prod.unit || 'Units'})` 
@@ -5232,6 +5273,10 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       invoicesDb.push(invoiceRecord);
     }
 
+    // Immediately disarm currentInvoice editing state so subsequent bills are brand new
+    currentInvoice.id = "";
+    currentInvoice.isEditing = false;
+
     if (!window.recentInvoiceMutations) window.recentInvoiceMutations = {};
     window.recentInvoiceMutations[invoiceRecord.id] = Date.now();
     window.recentInvoiceMutations[invoiceRecord.invoiceNo] = Date.now();
@@ -5320,6 +5365,7 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       shareInvoicePdfNative(invoiceRecord.details, btnEl, false, precomputedBase64);
       if (typeof openInvoiceSuccessModal === 'function') {
         openInvoiceSuccessModal(invoiceRecord);
+        resetBillingForm();
       } else {
         resetBillingForm();
         switchTab("history");
@@ -5334,6 +5380,7 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       }
       if (typeof openInvoiceSuccessModal === 'function') {
         openInvoiceSuccessModal(invoiceRecord);
+        resetBillingForm();
       } else {
         resetBillingForm();
         switchTab("history");

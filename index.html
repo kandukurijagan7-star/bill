@@ -1195,12 +1195,12 @@
                   <td style="text-align: center;">
                     <div class="prod-stock-stepper">
                       <button class="btn-stock-step" onclick="adjustProductStock('prod-1', -1)" title="Decrease Stock">−</button>
-                      <span class="stock-qty-text">19</span>
+                      <span class="stock-qty-text">0</span>
                       <button class="btn-stock-step" onclick="adjustProductStock('prod-1', 1)" title="Increase Stock">+</button>
-                      <span style="display: inline-block; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; padding: 2px 7px; border-radius: 12px; font-size: 10px; font-weight: 700;"><i class="fa-solid fa-circle-check"></i> In Stock</span>
+                      <span style="display: inline-block; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 2px 7px; border-radius: 12px; font-size: 10px; font-weight: 700;"><i class="fa-solid fa-triangle-exclamation"></i> Out</span>
                     </div>
                   </td>
-                  <td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 14px;">₹ 37,620.00</td>
+                  <td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 14px;">₹ 0.00</td>
                   <td style="text-align: center;">
                     <div class="prod-actions-row">
                       <button class="prod-action-btn restock" onclick="quickRestockProduct('prod-1')" title="1-Click Quick Restock (Add Inward Stock)" style="color: #0284c7; background: #e0f2fe; border: 1px solid #bae6fd;">
@@ -1319,9 +1319,9 @@
               <tfoot id="products-list-tfoot">
                 <tr>
                   <td colspan="4" style="text-align: right; font-weight: 700; color: #475569; padding: 14px 16px;">Total Warehouse Inventory:</td>
-                  <td colspan="2" style="text-align: center; font-weight: 800; color: #0284c7; padding: 14px 16px;" id="prod-total-count-footer">3 Items</td>
-                  <td style="text-align: center; font-weight: 800; color: #0f766e; padding: 14px 16px;" id="prod-total-stock-footer">330 Units</td>
-                  <td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 14px; padding: 14px 16px;" id="prod-total-val-footer">₹ 3,76,650.00</td>
+                  <td colspan="2" style="text-align: center; font-weight: 800; color: #0284c7; padding: 14px 16px;" id="prod-total-count-footer">4 Items</td>
+                  <td style="text-align: center; font-weight: 800; color: #0f766e; padding: 14px 16px;" id="prod-total-stock-footer">218 Units</td>
+                  <td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 14px; padding: 14px 16px;" id="prod-total-val-footer">₹ 1,21,050.00</td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -3799,7 +3799,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=330_auto_stock_deduct_fix"></script>
+  <script src="index_v5.js?v=332_stock_deduct_permanent_zero_fix"></script>
 </body>
 </html>
 
