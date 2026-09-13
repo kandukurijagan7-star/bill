@@ -267,12 +267,15 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
 
   // 1. Instant Single-Product Stock Mutation (Sub-Second < 150ms cross-device push)
   if (msg.type === 'PRODUCT_STOCK_CHANGED' && msg.productId) {
-    const prod = productsDb.find(p => p && (p.id === msg.productId || (p.description && msg.description && p.description.trim().toLowerCase() === msg.description.trim().toLowerCase())));
+    let prod = productsDb.find(p => p && (p.id === msg.productId || (p.description && msg.description && p.description.trim().toLowerCase() === msg.description.trim().toLowerCase())));
     const newStock = Math.max(0, parseInt(msg.stock, 10) || 0);
     const newStatus = msg.status || (newStock <= 0 ? "Out of Stock" : (newStock <= 10 ? "Low Stock" : "In Stock"));
     const targetId = prod ? prod.id : msg.productId;
 
-    if (prod) {
+    if (!prod && msg.product && typeof msg.product === 'object') {
+      prod = { ...msg.product, stock: newStock, status: newStatus };
+      productsDb.push(prod);
+    } else if (prod) {
       prod.stock = newStock;
       prod.status = newStatus;
       prod.updatedAt = msg.updatedAt || new Date().toISOString();
@@ -399,7 +402,8 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
   }
 
   // 4. Transaction-level invoice committed (Invoice + Stock Deltas + Parties)
-  if ((msg.type === 'invoice_saved' || msg.type === 'invoice_transaction_committed') && msg.invoice) {
+  const normType = String(msg.type || '').toUpperCase();
+  if ((normType === 'INVOICE_SAVED' || normType === 'INVOICE_TRANSACTION_COMMITTED') && msg.invoice) {
     const inv = msg.invoice;
     const idx = invoicesDb.findIndex(i => i && (i.id === inv.id || i.invoiceNo === inv.invoiceNo));
     if (idx > -1) invoicesDb[idx] = inv;
@@ -1004,7 +1008,7 @@ const AaryanDB = {
       if (Array.isArray(prodReq.result) && prodReq.result.length > 0) {
         let idbUpdated = false;
         prodReq.result.forEach(p => {
-          if (p && p.id === "prod-1" && (p.stock === 19 || p.stock === 127 || p.stock === 130)) {
+          if (p && p.id === "prod-1" && (p.stock === 127 || p.stock === 130) && !window.recentProductMutations?.["prod-1"]) {
             p.stock = 0;
             p.status = "Out of Stock";
             idbUpdated = true;
@@ -1468,7 +1472,7 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         let stock = Number((isRecentlyMutated && localProd && localProd.stock !== undefined ? localProd.stock : serverProd.stock) || 0);
         
         // prod-1 safety check: Invoice #0020 (108) and #0021 (19) have exhausted all 127 units
-        if (serverProd.id === "prod-1" && (serverProd.stock === 19 || serverProd.stock === 127 || serverProd.stock === 130)) {
+        if (!isRecentlyMutated && serverProd.id === "prod-1" && (serverProd.stock === 127 || serverProd.stock === 130)) {
           const inv21Present = Array.isArray(data.invoices) && data.invoices.some(i => i && (i.invoiceNo === "0021" || i.invoiceNo === 21));
           if (inv21Present) stock = 0;
         }
@@ -1950,8 +1954,8 @@ function initializeApp() {
             p.discount = 45.0;
             p.rate = 3600.0;
             delete p.isSeed;
-            // Both Invoice #0020 (-108) and #0021 (-19) fully consumed all 127 units
-            if (p.stock === 127 || p.stock === 130 || p.stock === 19 || p.stock > 0) {
+            // Only reconcile legacy hardcoded stock values (127 or 130) if invoices consumed them
+            if (p.stock === 127 || p.stock === 130) {
               p.stock = 0;
               p.status = "Out of Stock";
               p.updatedAt = new Date().toISOString();
@@ -2698,21 +2702,23 @@ function reconcileProductInventoryStock(oldInvoice, newInvoice) {
       const actionText = netDelta > 0 
         ? `Invoice Stock Deduction (-${netDelta} ${prod.unit || 'Units'})` 
         : `Invoice Edit Stock Reversal (+${Math.abs(netDelta)} ${prod.unit || 'Units'})`;
-      try { sendStockTelegramReport(prod, actionText, currentStock, newStock); } catch(e){}
+      setTimeout(() => {
+        try { sendStockTelegramReport(prod, actionText, currentStock, newStock); } catch(e){}
+      }, 50);
     }
   });
 
   if (modified) {
     try {
-      // LocalStorage persistence
+      // 1. Immediate LocalStorage persistence (< 0.05ms)
       localStorage.setItem("products", JSON.stringify(productsDb));
 
-      // IndexedDB persistence
+      // 2. Immediate IndexedDB persistence
       if (window.AaryanDB && typeof window.AaryanDB.saveAllProducts === "function") {
         try { window.AaryanDB.saveAllProducts(productsDb); } catch(e){}
       }
 
-      // 1. Instant local DOM updates (< 0.1ms)
+      // 3. Instant local DOM updates (< 0.1ms)
       changedStockDeltas.forEach(d => {
         if (typeof updateProductDomRowFast === 'function') {
           updateProductDomRowFast(d.productId, d.stock, d.status);
@@ -2721,14 +2727,14 @@ function reconcileProductInventoryStock(oldInvoice, newInvoice) {
       if (typeof populateBillingSelectors === "function") populateBillingSelectors();
       if (typeof updateDashboardOverview === "function") updateDashboardOverview();
 
-      // 2. High-speed broadcast across tri-channel mesh (< 150ms)
+      // 4. High-speed broadcast across tri-channel mesh (< 150ms)
       broadcastInterTabEvent('INVOICE_STOCK_DEDUCTED', {
         stockDeltas: changedStockDeltas,
         products: productsDb,
         invoiceNo: newInvoice?.invoiceNo || oldInvoice?.invoiceNo
       });
 
-      // 3. Debounced asynchronous push to Google Master Database
+      // 5. Debounced asynchronous push to Google Master Database
       if (directPushProductTimer) clearTimeout(directPushProductTimer);
       directPushProductTimer = setTimeout(() => {
         pushDirectToGoogleDatabase("save_products", { products: productsDb });
@@ -6293,7 +6299,9 @@ function formatWhatsAppPhone(phoneStr) {
 }
 
 async function sendTelegramTextMessage(messageText) {
-  loadAllDatabases();
+  if (!globalSettings || !globalSettings.telegram) {
+    try { globalSettings = JSON.parse(localStorage.getItem("settings") || "{}"); } catch (e) {}
+  }
   const token = (globalSettings.telegram?.token || "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g").trim();
   let rawChatId = (globalSettings.telegram?.chatId || "6877857251, 7906132548").trim();
 
@@ -9157,6 +9165,7 @@ window.saveProductModal = function(e) {
   const valAfterDisc = Math.round(Math.max(0, rate - (rate * disc / 100)) * 100) / 100;
   const totalVal = Math.round((finalStock * valAfterDisc) * 100) / 100;
 
+  const productStatus = finalStock <= 0 ? "Out of Stock" : (finalStock <= 10 ? "Low Stock" : "In Stock");
   const product = { 
     id: id || "prod-" + Date.now(), 
     description: desc, 
@@ -9170,6 +9179,7 @@ window.saveProductModal = function(e) {
     gstRate: 0, 
     discount: disc, 
     stock: finalStock, 
+    status: productStatus,
     totalValue: totalVal,
     updatedAt: new Date().toISOString() 
   };
@@ -9201,7 +9211,8 @@ window.saveProductModal = function(e) {
     delta: id ? (finalStock - oldStock) : finalStock,
     totalValue: product.totalValue,
     updatedAt: product.updatedAt,
-    description: product.description
+    description: product.description,
+    product: product
   });
   broadcastInterTabEvent('products_saved', { products: productsDb });
 
