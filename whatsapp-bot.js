@@ -254,7 +254,7 @@ function initMqttBridge() {
                 if (cmd.pdfBase64) {
                   const cleanB64 = cmd.pdfBase64.replace(/^data:application\/pdf;base64,/, '');
                   const media = new MessageMedia('application/pdf', cleanB64, cmd.filename || 'Invoice.pdf');
-                  await client.sendMessage(chatId, media, { caption: cmd.text || '', sendMediaAsDocument: true });
+                  await client.sendMessage(chatId, media, { caption: sanitizeCaption(cmd.text || cmd.caption || ''), sendMediaAsDocument: true });
                 } else if (cmd.text) {
                   await client.sendMessage(chatId, cmd.text);
                 }
@@ -320,6 +320,16 @@ function formatPhone(phone) {
   if (digits.length === 10) digits = '91' + digits;
   else if (digits.length === 11 && digits.startsWith('0')) digits = '91' + digits.substring(1);
   return digits.length >= 10 ? `${digits}@c.us` : null;
+}
+
+function sanitizeCaption(str) {
+  if (!str || typeof str !== 'string') return '';
+  const trimmed = str.trim();
+  // Strip out accidental raw base64 or long payload strings from WhatsApp document caption
+  if (trimmed.startsWith('data:application/pdf') || trimmed.startsWith('data:') || trimmed.startsWith('JVBERi0') || trimmed.length > 2000) {
+    return '';
+  }
+  return trimmed;
 }
 
 function findChromeExecutable() {
@@ -594,7 +604,7 @@ app.post('/api/whatsapp/send-invoice', async (req, res) => {
     if (pdfBase64) {
       const cleanB64 = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
       const media = new MessageMedia('application/pdf', cleanB64, filename || 'Invoice.pdf');
-      await client.sendMessage(chatId, media, { caption: text, sendMediaAsDocument: true });
+      await client.sendMessage(chatId, media, { caption: sanitizeCaption(text || req.body.caption || ''), sendMediaAsDocument: true });
     } else {
       await client.sendMessage(chatId, text);
     }

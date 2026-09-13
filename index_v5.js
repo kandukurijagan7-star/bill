@@ -61,13 +61,91 @@ try {
   if (Array.isArray(invoicesDb) && invoicesDb.length > 0) {
     invoicesDb.sort((a, b) => String(a.invoiceNo || "").localeCompare(String(b.invoiceNo || "")));
   }
-  // Deleted Invoice Tombstone Management (Zero-Resurrection Engine)
+  // Deleted Invoice Tombstone Management (Zero-Resurrection Engine with Active-Invoice Immunity)
   window.getDeletedInvoiceTombstones = function() {
     try {
       const raw = JSON.parse(localStorage.getItem("deleted_invoice_ids") || "[]");
       return Array.isArray(raw) ? raw : [];
     } catch (e) {
       return [];
+    }
+  };
+
+  // Safely clears tombstones when an invoice is created/saved, ensuring reused numbers are NEVER blocked
+  window.clearInvoiceTombstone = function(invNo, invId) {
+    try {
+      let tombstones = window.getDeletedInvoiceTombstones();
+      if (!tombstones || tombstones.length === 0) return;
+
+      const cleanNo = String(invNo || '').replace(/^#/, '').trim().toLowerCase();
+      const numVal = parseInt(cleanNo, 10);
+      const numStr = !isNaN(numVal) ? String(numVal) : "";
+      const cleanId = String(invId || '').trim().toLowerCase();
+
+      const beforeLen = tombstones.length;
+      tombstones = tombstones.filter(t => {
+        const item = String(t || '').trim().toLowerCase();
+        if (!item) return false;
+        if (cleanId && item === cleanId) return false;
+        if (cleanNo && (item === cleanNo || item === `#${cleanNo}` || item === `inv_${cleanNo}`)) return false;
+        const itemClean = item.replace(/^#/, '').replace(/^inv_/, '');
+        const itemNum = parseInt(itemClean, 10);
+        const itemNumStr = !isNaN(itemNum) ? String(itemNum) : "";
+        if (numStr && itemNumStr && numStr === itemNumStr) return false;
+        return true;
+      });
+
+      if (tombstones.length !== beforeLen) {
+        localStorage.setItem("deleted_invoice_ids", JSON.stringify(tombstones));
+      }
+    } catch (e) {
+      console.warn("clearInvoiceTombstone error:", e);
+    }
+  };
+
+  // Reconciles tombstones against active valid records (auto-unblocks valid invoices present in cloud or memory)
+  window.reconcileTombstonesWithActiveInvoices = function(invoices) {
+    try {
+      if (!Array.isArray(invoices) || invoices.length === 0) return;
+      let tombstones = window.getDeletedInvoiceTombstones();
+      if (!tombstones || tombstones.length === 0) return;
+
+      let changed = false;
+      invoices.forEach(inv => {
+        if (!inv) return;
+        const hasItems = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0);
+        const hasCustomer = (inv.customerName && String(inv.customerName).trim() !== 'undefined' && String(inv.customerName).trim().length > 0) || (inv.details && (inv.details.consignee?.name || inv.details.buyer?.name));
+        const hasTotal = parseFloat(inv.total) > 0 || (inv.details && parseFloat(inv.details.total) > 0);
+        if (!hasItems || !hasCustomer || !hasTotal) return;
+
+        const cleanNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').replace(/^#/, '').trim().toLowerCase();
+        const numVal = parseInt(cleanNo, 10);
+        const numStr = !isNaN(numVal) ? String(numVal) : "";
+        const cleanId = String(inv.id || '').trim().toLowerCase();
+
+        // Never unblock known phantom test IDs
+        if (numStr === '201' || numStr === '102') return;
+
+        const beforeLen = tombstones.length;
+        tombstones = tombstones.filter(t => {
+          const item = String(t || '').trim().toLowerCase();
+          if (!item) return false;
+          if (cleanId && item === cleanId) return false;
+          if (cleanNo && (item === cleanNo || item === `#${cleanNo}` || item === `inv_${cleanNo}`)) return false;
+          const itemClean = item.replace(/^#/, '').replace(/^inv_/, '');
+          const itemNum = parseInt(itemClean, 10);
+          const itemNumStr = !isNaN(itemNum) ? String(itemNum) : "";
+          if (numStr && itemNumStr && numStr === itemNumStr) return false;
+          return true;
+        });
+        if (tombstones.length !== beforeLen) changed = true;
+      });
+
+      if (changed) {
+        localStorage.setItem("deleted_invoice_ids", JSON.stringify(tombstones));
+      }
+    } catch (e) {
+      console.warn("reconcileTombstonesWithActiveInvoices error:", e);
     }
   };
 
@@ -82,6 +160,11 @@ try {
     const numVal = parseInt(cleanNo, 10);
     const numStr = !isNaN(numVal) ? String(numVal) : "";
 
+    const hasItems = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0);
+    const hasCustomer = (inv.customerName && String(inv.customerName).trim() !== 'undefined' && String(inv.customerName).trim().length > 0) || (inv.details && (inv.details.consignee?.name || inv.details.buyer?.name));
+    const hasTotal = parseFloat(inv.total) > 0 || (inv.details && parseFloat(inv.details.total) > 0);
+    const isValidActiveRecord = hasItems && hasCustomer && hasTotal;
+
     for (let i = 0; i < tombstones.length; i++) {
       const t = String(tombstones[i] || "").trim().toLowerCase();
       if (!t) continue;
@@ -89,16 +172,32 @@ try {
       const tNum = parseInt(cleanT, 10);
       const tNumStr = !isNaN(tNum) ? String(tNum) : "";
 
+      // Exact ID match is ALWAYS a deletion match
       if (invId && invId === t) return true;
+      if (invId && (invId === `inv_${cleanT}` || invId === `inv_${tNumStr}`)) {
+        if (isValidActiveRecord && invId.length > 12) {
+          if (invId === t) return true;
+        } else {
+          return true;
+        }
+      }
+
+      // Valid active records with full details should NOT be dropped by loose numeric matches unless phantom test ID
+      if (isValidActiveRecord && numStr !== '201' && numStr !== '102') {
+        continue;
+      }
+
       if (invNo && (invNo === t || cleanNo === cleanT)) return true;
       if (numStr && tNumStr && numStr === tNumStr) return true;
-      if (invId && (invId === `inv_${cleanT}` || invId === `inv_${tNumStr}`)) return true;
     }
     return false;
   };
 
   window.filterOutDeletedInvoices = function(invoices) {
     if (!Array.isArray(invoices)) return [];
+    if (typeof window.reconcileTombstonesWithActiveInvoices === 'function') {
+      window.reconcileTombstonesWithActiveInvoices(invoices);
+    }
     const tombstones = window.getDeletedInvoiceTombstones();
     return invoices.filter(inv => {
       if (!inv) return false;
@@ -118,9 +217,13 @@ try {
     });
   };
 
-  // Pre-seed phantom deleted IDs into tombstones so they are wiped permanently
+  // Pre-seed phantom deleted IDs into tombstones, and unblock any accidental lock on active invoice #0035
   try {
     let curTombstones = window.getDeletedInvoiceTombstones();
+    curTombstones = curTombstones.filter(t => {
+      const str = String(t).trim().toLowerCase();
+      return str !== '0035' && str !== '35' && str !== '#0035' && str !== 'inv_0035' && str !== 'inv_35';
+    });
     ['0201', '0102', '201', '102', 'inv_201', 'inv_102', '#0201', '#0102'].forEach(phantom => {
       if (!curTombstones.includes(phantom)) curTombstones.push(phantom);
     });
@@ -6302,6 +6405,11 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
     currentInvoice.id = "";
     currentInvoice.isEditing = false;
 
+    // Unblock any tombstone matching this invoice number or ID so newly generated invoices are NEVER filtered out
+    if (typeof window.clearInvoiceTombstone === 'function') {
+      window.clearInvoiceTombstone(invoiceRecord.invoiceNo, invoiceRecord.id);
+    }
+
     if (!window.recentInvoiceMutations) window.recentInvoiceMutations = {};
     window.recentInvoiceMutations[invoiceRecord.id] = Date.now();
     window.recentInvoiceMutations[invoiceRecord.invoiceNo] = Date.now();
@@ -6350,7 +6458,7 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       if (actionType !== 'share_whatsapp' && rawPhone && rawPhone.toString().replace(/\D/g, '').length >= 10 && globalSettings.whatsappAutoSend !== false) {
         try {
           if (typeof autoDispatchInvoiceToWhatsApp === 'function') {
-            const sent = await autoDispatchInvoiceToWhatsApp(invoiceRecord.details, precomputedBase64);
+            const sent = await autoDispatchInvoiceToWhatsApp(invoiceRecord.details, null, precomputedBase64);
             invoiceRecord.waAutoSent = Boolean(sent);
             if (typeof updateSuccessModalWhatsAppStatus === 'function') {
               updateSuccessModalWhatsAppStatus(invoiceRecord);
@@ -8697,6 +8805,11 @@ async function dispatchWhatsAppBotInvoice({ phone, text, filename, pdfBase64 }) 
   const cleanPhone = formatWhatsAppPhone(phone);
   if (!cleanPhone) return false;
 
+  // Ensure caption never carries raw base64 or giant binary strings
+  const cleanCaption = (text && typeof text === 'string' && !text.startsWith('data:') && !text.startsWith('JVBERi0') && text.length < 2000)
+    ? text
+    : '';
+
   // 1. Try local HTTP POST if running locally on port 3001
   if (window.location.port === '3001' || window.location.hostname === 'localhost') {
     try {
@@ -8705,7 +8818,7 @@ async function dispatchWhatsAppBotInvoice({ phone, text, filename, pdfBase64 }) 
       const res = await fetch(getWhatsAppApiEndpoint('/api/whatsapp/send-invoice'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: cleanPhone, text, filename, pdfBase64 }),
+        body: JSON.stringify({ phone: cleanPhone, text: cleanCaption, filename, pdfBase64 }),
         signal: controller.signal
       });
       clearTimeout(tId);
@@ -8724,7 +8837,7 @@ async function dispatchWhatsAppBotInvoice({ phone, text, filename, pdfBase64 }) 
       realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({
         command: 'send_invoice',
         phone: cleanPhone,
-        text,
+        text: cleanCaption,
         filename,
         pdfBase64,
         timestamp: Date.now()
@@ -8783,8 +8896,24 @@ async function dispatchWhatsAppBotMessage({ phone, text }) {
 }
 
 // Automatic Silent WhatsApp Dispatch upon bill generation (100% Automated Backend Process, NO Browser Redirect)
-async function autoDispatchInvoiceToWhatsApp(details, text = null, precomputedBase64 = null) {
+async function autoDispatchInvoiceToWhatsApp(details, textOrBase64 = null, precomputedBase64 = null) {
   if (!details) return false;
+
+  let text = textOrBase64;
+  let pdfBase64 = precomputedBase64;
+
+  // Polymorphic detection: if 2nd argument is base64 string
+  if (typeof text === 'string' && (text.startsWith('data:application/pdf') || text.startsWith('data:') || text.startsWith('JVBERi0') || text.length > 500)) {
+    pdfBase64 = text;
+    text = null;
+  }
+
+  // Ensure text caption is clean and concise (NEVER raw base64 or technical strings)
+  if (!text || typeof text !== 'string' || text.startsWith('data:') || text.startsWith('JVBERi0')) {
+    const custName = details.consignee?.name || details.buyer?.name || details.customerName || 'Customer';
+    text = `📄 Invoice #${details.invoiceNo} - ${custName}`;
+  }
+
   const recipientsInfo = typeof getInvoiceRecipients === 'function'
     ? getInvoiceRecipients(details)
     : { primaryPhone: getCustomerPhoneNumber(details), consigneeName: details.consignee?.name, buyerName: details.buyer?.name, allRecipients: [] };
@@ -8801,7 +8930,6 @@ async function autoDispatchInvoiceToWhatsApp(details, text = null, precomputedBa
   // Check live status if needed
   let isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED');
 
-  let pdfBase64 = precomputedBase64;
   if (!pdfBase64) {
     try {
       const gen = await generateInvoicePdfBlob(details);
