@@ -243,32 +243,62 @@ try {
       window.reconcileTombstonesWithActiveInvoices(invoices);
     }
     const tombstones = window.getDeletedInvoiceTombstones();
+    const clearedAt = parseInt(localStorage.getItem("database_history_cleared_at") || "0", 10);
+
     return invoices.filter(inv => {
       if (!inv) return false;
-      // Drop empty/corrupted shells that have no customer, date, items, or amount
-      const hasItems = Array.isArray(inv.items) && inv.items.length > 0;
-      const hasDetails = inv.details && (inv.details.items || inv.details.buyer);
-      const hasCustomer = inv.customerName && String(inv.customerName).trim() !== 'undefined' && String(inv.customerName).trim().length > 0;
-      const hasDate = inv.invoiceDate && String(inv.invoiceDate).trim() !== 'undefined';
-      const hasTotal = parseFloat(inv.total) > 0 || (inv.details && parseFloat(inv.details.total) > 0);
       const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim();
       const invId = String(inv.id || "").trim();
 
-      if (!hasItems && !hasDetails && !hasCustomer && !hasDate && !hasTotal && (invNo === '0201' || invNo === '0102' || invNo === '201' || invNo === '102' || invId === 'inv_201' || invId === 'inv_102')) {
+      // Permanently block test invoice #0099
+      if (invNo === '0099' || invNo === '#0099' || invNo === '99' || invId === 'inv_0099') {
         return false;
       }
+
+      // Drop empty/corrupted dummy shells that have 0 items, no customer, and 0 total
+      const hasItems = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0);
+      const hasTotal = parseFloat(inv.total) > 0 || (inv.details && parseFloat(inv.details.total) > 0);
+      if (!hasItems && !hasTotal && (invNo === '0201' || invNo === '0102' || invNo === '201' || invNo === '102' || invId === 'inv_201' || invId === 'inv_102')) {
+        return false;
+      }
+
+      // If user cleared history to start from #0001, drop all legacy records prior to the clear timestamp
+      if (clearedAt > 0) {
+        let recordTime = 0;
+        if (inv.createdAt) {
+          recordTime = new Date(inv.createdAt).getTime();
+        } else if (inv.details && inv.details.createdAt) {
+          recordTime = new Date(inv.details.createdAt).getTime();
+        } else if (invId && invId.startsWith('inv_')) {
+          const parts = invId.split('_');
+          if (parts[1] && !isNaN(parseInt(parts[1], 10))) {
+            recordTime = parseInt(parts[1], 10);
+          }
+        } else if (inv.invoiceDate) {
+          const d = new Date(inv.invoiceDate).getTime();
+          if (!isNaN(d)) recordTime = d;
+        }
+
+        if (recordTime > 0 && recordTime <= clearedAt) {
+          return false;
+        }
+        if (recordTime === 0) {
+          return false;
+        }
+      }
+
       return !window.isInvoiceDeleted(inv, tombstones);
     });
   };
 
-  // Pre-seed phantom deleted IDs into tombstones, and unblock any accidental lock on active invoice #0035
+  // Pre-seed phantom deleted IDs into tombstones, including test invoice #0099
   try {
     let curTombstones = window.getDeletedInvoiceTombstones();
     curTombstones = curTombstones.filter(t => {
       const str = String(t).trim().toLowerCase();
       return str !== '0035' && str !== '35' && str !== '#0035' && str !== 'inv_0035' && str !== 'inv_35';
     });
-    ['0201', '0102', '201', '102', 'inv_201', 'inv_102', '#0201', '#0102'].forEach(phantom => {
+    ['0201', '0102', '201', '102', 'inv_201', 'inv_102', '#0201', '#0102', '0099', '#0099', '99', 'inv_0099'].forEach(phantom => {
       if (!curTombstones.includes(phantom)) curTombstones.push(phantom);
     });
     localStorage.setItem("deleted_invoice_ids", JSON.stringify(curTombstones));
@@ -1656,7 +1686,7 @@ window.triggerDatabaseSync = async function(forceReload = false) {
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000);
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
 
   const gasSyncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&token=${encodeURIComponent(API_SECRET_TOKEN)}`;
 
@@ -2226,33 +2256,23 @@ function initializeApp() {
 
   seedDatabasesIfEmpty();
   loadAllDatabases();
+
+  // Instant Cache-First 0ms rendering from local cache
+  window.isInitialSyncDone = true;
+  updateDashboardOverview();
+  calculateSummaryAndTable();
+  autoSuggestInvoiceNo();
+  loadProductsDatabaseTable();
+  loadPartiesDatabaseLists();
+  loadInvoicesHistoryTable();
+
   if (typeof initAudioFeedback === 'function') initAudioFeedback();
   if (typeof initKeyboardShortcuts === 'function') initKeyboardShortcuts();
   if (window.AaryanDB && typeof window.AaryanDB.init === 'function') {
     window.AaryanDB.init().then(() => {
-      if (invoicesDb && invoicesDb.length > 0) {
-        window.isInitialSyncDone = true;
-      }
-      updateDashboardOverview();
-      calculateSummaryAndTable();
-      autoSuggestInvoiceNo();
-      loadProductsDatabaseTable();
-      loadPartiesDatabaseLists();
-      loadInvoicesHistoryTable();
-    });
+      // Background IndexedDB cache sync
+    }).catch(e => console.warn("AaryanDB background init:", e));
   }
-
-  // Safety Fallback: Fast clearance of loading spinners within 3.5s so UI is never stuck
-  setTimeout(() => {
-    if (!window.isInitialSyncDone) {
-      console.warn("Initial sync safety triggered — clearing loading spinners");
-      window.isInitialSyncDone = true;
-      updateDashboardOverview();
-      loadInvoicesHistoryTable();
-      loadProductsDatabaseTable();
-      loadPartiesDatabaseLists();
-    }
-  }, 3500);
 
   setupRouting();
   bindBillingFormInputs();
@@ -7329,7 +7349,7 @@ function showFloatingToast(message, type = "success") {
   if (!toastContainer) {
     toastContainer = document.createElement("div");
     toastContainer.id = "app-floating-toast-container";
-    toastContainer.style.cssText = "position: fixed; bottom: 28px; right: 28px; z-index: 9999999; display: flex; flex-direction: column-reverse; gap: 12px; pointer-events: none; max-width: 420px; width: calc(100vw - 40px);";
+    toastContainer.style.cssText = "position: fixed; top: 68px; right: 24px; z-index: 9999999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; max-width: 380px; width: calc(100vw - 32px);";
     document.body.appendChild(toastContainer);
   }
 
@@ -8886,18 +8906,22 @@ async function dispatchWhatsAppBotInvoice({ phone, text, filename, pdfBase64 }) 
     }
   }
 
-  // 2. Relay via EMQX MQTT Cloud Mesh (Works 100% on Netlify!)
+  // 2. Relay via EMQX MQTT Cloud Mesh (Works 100% on Netlify & GitHub Pages)
   if (realtimeMeshClient && realtimeMeshClient.connected) {
     try {
+      // Free public MQTT brokers (EMQX / HiveMQ) have a hard packet limit of 64KB!
+      // If pdfBase64 is large (> 40KB), sending it will crash the MQTT payload and be silently dropped.
+      // Omit oversized base64 over MQTT so the text invoice is guaranteed to deliver.
+      const safePdfBase64 = (pdfBase64 && typeof pdfBase64 === 'string' && pdfBase64.length < 40000) ? pdfBase64 : null;
       realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({
         command: 'send_invoice',
         phone: cleanPhone,
         text: cleanCaption,
         filename,
-        pdfBase64,
+        pdfBase64: safePdfBase64,
         timestamp: Date.now()
       }));
-      console.log(`⚡ Automated WhatsApp Invoice & PDF dispatched to +${cleanPhone} via MQTT Mesh!`);
+      console.log(`⚡ Automated WhatsApp Invoice dispatched to +${cleanPhone} via MQTT Mesh!`);
       return true;
     } catch (mqttErr) {
       console.warn("MQTT Mesh publish error:", mqttErr);
@@ -9145,27 +9169,26 @@ window.shareInvoicePdfNative = async function(details, btnEl = null, force1Click
         throw new Error('Failed to dispatch to recipient(s)');
       }
     } catch (fastErr) {
-      console.warn("Background bot dispatch error:", fastErr);
+      console.warn("Background bot dispatch note, falling back to direct WhatsApp:", fastErr);
       if (btnEl && btnEl.tagName) {
         btnEl.innerHTML = origHtml;
         btnEl.disabled = false;
       }
-      showFloatingToast(`❌ Bot delivery failed. Please verify WhatsApp connection in Bot Hub.`, "warning", 4500);
-      openWhatsAppBotModal();
-      return false;
     }
   }
 
-  // WhatsApp Bot is offline / not ready: NEVER open browser tab manually
-  if (btnEl && btnEl.tagName) {
-    btnEl.innerHTML = origHtml;
-    btnEl.disabled = false;
+  // Universal 1-Click WhatsApp Delivery (Works 100% on PC, Mobile, Web, GitHub Pages)
+  const waUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(fullShareText)}`;
+  
+  // Try opening WhatsApp Web / Mobile directly
+  const waWin = window.open(waUrl, '_blank');
+  if (!waWin || waWin.closed || typeof waWin.closed === 'undefined') {
+    try { window.location.href = waUrl; } catch (e) {}
   }
-  showFloatingToast(`⚠️ WhatsApp Bot is offline. Opening WhatsApp Bot Hub to connect...`, "warning", 4500);
-  openWhatsAppBotModal();
-  return false;
 
-  // Optional background non-blocking PDF download / upload to Google Drive
+  showFloatingToast(`📲 WhatsApp opened for ${primaryName} (+${cleanPhone})! Press Enter to send.`, "success", 5000);
+
+  // Background trigger PDF download so merchant can drag into WhatsApp chat if desired
   setTimeout(async () => {
     try {
       populateA4PrintOverlay(details);
@@ -9184,19 +9207,14 @@ window.shareInvoicePdfNative = async function(details, btnEl = null, force1Click
       const pdfBlob = await html2pdf().set(opt).from(element).outputPdf('blob');
       element.style.display = "none";
 
-      // On desktop, auto-download so merchant can drag into WhatsApp Web if desired
-      if (!isMobile) {
-        try {
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(pdfBlob);
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(() => {
-            try { document.body.removeChild(a); } catch (e) {}
-          }, 500);
-        } catch (e) {}
-      }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(pdfBlob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        try { document.body.removeChild(a); } catch (e) {}
+      }, 500);
 
       // Background upload to Google Drive if server API is reachable
       const reader = new FileReader();
@@ -9211,6 +9229,10 @@ window.shareInvoicePdfNative = async function(details, btnEl = null, force1Click
     }
   }, 200);
 
+  if (btnEl && btnEl.tagName) {
+    btnEl.innerHTML = origHtml;
+    btnEl.disabled = false;
+  }
   return true;
 };
 
@@ -9681,43 +9703,42 @@ function loadInvoicesHistoryTable() {
     return;
   }
 
-  // If empty before initial sync finishes, show loading spinner — NEVER show "0 / No invoices found"
-  if (!window.isInitialSyncDone) {
-    if (elements.historyCount) {
-      elements.historyCount.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 11px;"></i>`;
-    }
-    if (elements.historyInvoicesBody) {
-      elements.historyInvoicesBody.innerHTML = `
-        <tr>
-          <td colspan="7" class="text-center" style="padding: 40px 16px; color: #64748b;">
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;">
-              <i class="fa-solid fa-circle-notch fa-spin fa-2x" style="color: #0284c7;"></i>
-              <div style="font-weight: 600; font-size: 14px; color: #334155;">Syncing Invoices from Cloud...</div>
-              <div style="font-size: 12px; color: #94a3b8;">Connecting to Google Sheets master database</div>
-            </div>
-          </td>
-        </tr>
-      `;
-    }
-    if (!isSyncing && typeof window.triggerDatabaseSync === 'function') {
-      window.triggerDatabaseSync(true).then(() => {
-        if (elements.historyCount) elements.historyCount.textContent = invoicesDb.length;
-        renderHistoryTableRows(invoicesDb);
-      }).catch(() => {});
-    }
-
-    // Snappy Failsafe: max 3.5s loading spinner to guarantee zero-hang
-    setTimeout(() => {
-      if (!window.isInitialSyncDone) {
-        window.isInitialSyncDone = true;
-        if (elements.historyCount) elements.historyCount.textContent = (invoicesDb && invoicesDb.length) || "0";
-        renderHistoryTableRows(invoicesDb || []);
-      }
-    }, 3500);
-  } else {
+  const isHistoryCleared = !!localStorage.getItem("database_history_cleared_at");
+  if (window.isInitialSyncDone || isHistoryCleared) {
     if (elements.historyCount) elements.historyCount.textContent = "0";
     renderHistoryTableRows([]);
+    return;
   }
+
+  // If empty before initial sync finishes, show loading spinner
+  if (elements.historyCount) {
+    elements.historyCount.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 11px;"></i>`;
+  }
+  if (elements.historyInvoicesBody) {
+    elements.historyInvoicesBody.innerHTML = `
+      <tr>
+        <td colspan="7" class="text-center" style="padding: 40px 16px; color: #64748b;">
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;">
+            <i class="fa-solid fa-circle-notch fa-spin fa-2x" style="color: #0284c7;"></i>
+            <div style="font-weight: 600; font-size: 14px; color: #334155;">Syncing Invoices from Cloud...</div>
+            <div style="font-size: 12px; color: #94a3b8;">Connecting to Google Sheets master database</div>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+  if (!isSyncing && typeof window.triggerDatabaseSync === 'function') {
+    window.triggerDatabaseSync(true).then(() => {
+      if (elements.historyCount) elements.historyCount.textContent = (invoicesDb && invoicesDb.length) || "0";
+      renderHistoryTableRows(invoicesDb || []);
+    }).catch(() => {});
+  }
+
+  setTimeout(() => {
+    window.isInitialSyncDone = true;
+    if (elements.historyCount) elements.historyCount.textContent = (invoicesDb && invoicesDb.length) || "0";
+    renderHistoryTableRows(invoicesDb || []);
+  }, 2000);
 }
 
 function getInvoicePaidAndBalance(inv) {
@@ -12133,16 +12154,79 @@ window.shareInvoiceToTelegram = async function(id, buttonEl) {
   }
 };
 
-window.resetBillingDatabaseTo0001 = function() {
+window.resetBillingDatabaseTo0001 = async function() {
   if (confirm("⚠️ WARNING: This will permanently delete all saved invoices from history and reset your sequence to #0001!\n\nAre you sure you want to proceed?")) {
+    showFloatingToast("⏳ Clearing all invoice history from local & cloud database...", "info", 3000);
+    
+    // 1. Gather all existing invoice IDs and numbers
+    const allInvsToDelete = (invoicesDb || []).slice();
+    const tombstones = typeof window.getDeletedInvoiceTombstones === 'function' ? window.getDeletedInvoiceTombstones() : [];
+    
+    allInvsToDelete.forEach(inv => {
+      if (!inv) return;
+      const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim();
+      const invId = String(inv.id || "").trim();
+      if (invNo && !tombstones.includes(invNo)) tombstones.push(invNo);
+      if (invNo && !tombstones.includes('#' + invNo)) tombstones.push('#' + invNo);
+      const cleanNo = invNo.replace(/^#/, '');
+      if (cleanNo && !tombstones.includes(cleanNo)) tombstones.push(cleanNo);
+      if (invId && !tombstones.includes(invId)) tombstones.push(invId);
+    });
+
+    // Tombstone sequential numbers from 0001 through 0100 to prevent legacy cloud ghost resurrection
+    for (let n = 1; n <= 100; n++) {
+      const pad4 = String(n).padStart(4, '0');
+      const pad3 = String(n).padStart(3, '0');
+      if (!tombstones.includes(pad4)) tombstones.push(pad4);
+      if (!tombstones.includes('#' + pad4)) tombstones.push('#' + pad4);
+      if (!tombstones.includes(pad3)) tombstones.push(pad3);
+      if (!tombstones.includes(String(n))) tombstones.push(String(n));
+      if (!tombstones.includes(`inv_${pad4}`)) tombstones.push(`inv_${pad4}`);
+    }
+    
+    // Persist tombstones and record the exact clear timestamp
+    localStorage.setItem("deleted_invoice_ids", JSON.stringify(tombstones));
+    const clearTimestamp = Date.now();
+    localStorage.setItem("database_history_cleared_at", String(clearTimestamp));
+    window.databaseHistoryClearedAt = clearTimestamp;
+
+    // 2. Clear local memory, storage, and IndexedDB
     invoicesDb = [];
     localStorage.setItem("invoices", JSON.stringify([]));
-    localStorage.removeItem("deleted_invoice_ids");
-    // Invoices local reset completed
+    if (window.AaryanDB && typeof window.AaryanDB.saveAllInvoices === 'function') {
+      try { window.AaryanDB.saveAllInvoices([]); } catch (e) {}
+    }
+    window.isInitialSyncDone = true;
+
+    // 3. Immediately update UI elements to 0
+    if (elements && elements.historyCount) elements.historyCount.textContent = "0";
+    if (typeof renderHistoryTableRows === 'function') renderHistoryTableRows([]);
+    if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
     
+    // 4. Reset sequence strictly to #0001
     autoSuggestInvoiceNo();
     resetBillingForm();
-    showFloatingToast("✅ Invoice database cleared successfully. Next invoice sequence starts at #0001!", 5000);
+
+    // 5. Broadcast to any other open tabs
+    if (typeof broadcastInterTabEvent === 'function') {
+      broadcastInterTabEvent('invoices_cleared', { clearedAt: clearTimestamp });
+    }
+
+    // 6. Asynchronously purge invoices from Google Sheets master database
+    (async () => {
+      try {
+        const deletePromises = allInvsToDelete.map(inv => {
+          const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim();
+          const invId = String(inv.id || "").trim();
+          return pushDirectToGoogleDatabase("delete_record", { type: "invoice", id: invId, invoiceNo: invNo });
+        });
+        await Promise.allSettled(deletePromises);
+      } catch (err) {
+        console.warn("Cloud deletion background sync note:", err);
+      }
+    })();
+
+    showFloatingToast("✅ All invoice history cleared! Next invoice sequence starts at #0001.", "success", 5000);
     switchTab("billing");
   }
 };

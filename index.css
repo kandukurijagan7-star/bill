@@ -7127,11 +7127,217 @@ section.content-view.hidden {
   padding: 16px 20px 90px 20px !important;
 }
 
-#view-dashboard.dashboard-scroll-mode .card-box.margin-top-12 {
-  flex: none !important;
-  min-height: auto !important;
+
+
+
+/* ==========================================================================
+   INVOICE HISTORY TOOLBAR & COMPACT FIT UX
+   ========================================================================== */
+.history-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+  padding: 12px 18px !important;
+  background: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
 }
 
-#view-dashboard.dashboard-scroll-mode .chart-canvas-container {
-  height: 180px !important;
+.history-header h3 {
+  margin: 0 !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  white-space: nowrap !important;
+}
+
+.history-toolbar {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+  flex: 1 !important;
+  justify-content: flex-end !important;
+}
+
+.history-search-box {
+  position: relative !important;
+  flex: 1 1 200px !important;
+  max-width: 280px !important;
+  min-width: 160px !important;
+  margin: 0 !important;
+}
+
+.history-search-box input {
+  width: 100% !important;
+  height: 38px !important;
+  padding: 0 12px 0 34px !important;
+  background: #f8fafc !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 8px !important;
+  color: #0f172a !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  box-sizing: border-box !important;
+  transition: all 0.2s ease !important;
+}
+
+.history-search-box input:focus {
+  background: #ffffff !important;
+  border-color: #0284c7 !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15) !important;
+  outline: none !important;
+}
+
+.history-search-box i {
+  position: absolute !important;
+  left: 11px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  color: #94a3b8 !important;
+  font-size: 13px !important;
+  pointer-events: none !important;
+}
+
+.history-filter-select {
+  height: 38px !important;
+  padding: 0 28px 0 10px !important;
+  background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E") no-repeat right 8px center / 14px !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 8px !important;
+  color: #1e293b !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  min-width: 140px !important;
+  max-width: 175px !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  cursor: pointer !important;
+  box-sizing: border-box !important;
+  transition: all 0.2s ease !important;
+}
+
+.history-filter-select:focus {
+  border-color: #0284c7 !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15) !important;
+  outline: none !important;
+}
+
+/* ==========================================================================
+   LAPTOP & DESKTOP SCREEN FIT (1366x768 & Scaled Displays)
+   ========================================================================== */
+@media (min-width: 901px) {
+  /* Ensure Summary Card fits completely without vertical cutoff on laptops */
+  .billing-summary-wrapper {
+    width: 325px !important;
+    position: sticky !important;
+    top: 8px !important;
+    max-height: calc(100vh - 72px) !important;
+    max-height: calc(100dvh - 72px) !important;
+  }
+
+  .summary-card {
+    padding: 12px 14px !important;
+    border-radius: 12px !important;
+    max-height: calc(100vh - 72px) !important;
+    max-height: calc(100dvh - 72px) !important;
+    overflow-y: auto !important;
+    scrollbar-width: thin !important;
+    scrollbar-color: #cbd5e1 transparent !important;
+  }
+
+  .summary-card::-webkit-scrollbar {
+    width: 5px !important;
+  }
+
+  .summary-card::-webkit-scrollbar-thumb {
+    background: #cbd5e1 !important;
+    border-radius: 4px !important;
+  }
+
+  .summary-header {
+    padding-bottom: 8px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .summary-header h3 {
+    font-size: 14px !important;
+  }
+
+  .summary-body {
+    gap: 7px !important;
+  }
+
+  .summary-grand-total {
+    padding: 10px 14px !important;
+    margin: 6px 0 !important;
+    border-radius: 10px !important;
+  }
+
+  .summary-grand-total h2 {
+    font-size: 22px !important;
+  }
+
+  .summary-actions button,
+  .summary-actions-grid button,
+  .btn-generate-a4 {
+    min-height: 40px !important;
+    padding: 8px 12px !important;
+    font-size: 12.5px !important;
+  }
+}
+
+/* Header Pills Responsive Fitting for Laptops (<= 1400px) */
+@media (max-width: 1400px) {
+  .app-top-header-meta {
+    gap: 6px !important;
+  }
+
+  .app-top-header-meta > * {
+    padding: 4px 8px !important;
+    font-size: 11px !important;
+  }
+
+  #live-stock-alert-pill span,
+  #live-audio-fx-pill span,
+  #live-data-share-pill span {
+    display: none !important;
+  }
+}
+
+/* FLOATING TOASTS: Positioned at TOP-RIGHT so they NEVER block Summary or Buttons */
+#app-floating-toast-container {
+  position: fixed !important;
+  top: 68px !important;
+  right: 24px !important;
+  bottom: auto !important;
+  left: auto !important;
+  z-index: 9999999 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+  pointer-events: none !important;
+  max-width: 380px !important;
+  width: calc(100vw - 32px) !important;
+}
+
+.floating-toast {
+  pointer-events: auto !important;
+  border-radius: 10px !important;
+  padding: 10px 14px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2) !important;
+  font-size: 12.5px !important;
+  animation: toast-slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@keyframes toast-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }

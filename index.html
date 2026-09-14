@@ -1027,27 +1027,27 @@
       <!-- VIEW: INVOICE HISTORY -->
       <section id="view-history" class="content-view hidden">
         <div class="card-box">
-          <div class="card-box-header" style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
-            <h3>Invoice History (<span id="history-count">3</span>)</h3>
-            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-              <select id="filter-history-type" onchange="filterInvoicesByStatus()" style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg, #0f172a); color: var(--text-color, #f8fafc); font-size: 13px; cursor: pointer;">
+          <div class="card-box-header history-header">
+            <h3>Invoice History (<span id="history-count">0</span>)</h3>
+            <div class="history-toolbar">
+              <div class="search-box history-search-box">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="search-history-input" placeholder="Search Invoice # or Customer...">
+              </div>
+              <select id="filter-history-type" class="history-filter-select" onchange="filterInvoicesByStatus()">
                 <option value="all">All Document Types</option>
                 <option value="invoice">GST Invoices Only</option>
                 <option value="estimate">Quotations / Estimates</option>
               </select>
-              <select id="filter-history-status" onchange="filterInvoicesByStatus()" style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg, #0f172a); color: var(--text-color, #f8fafc); font-size: 13px; cursor: pointer;">
+              <select id="filter-history-status" class="history-filter-select" onchange="filterInvoicesByStatus()">
                 <option value="all">All Payment Statuses</option>
                 <option value="Paid">Paid Only</option>
                 <option value="Partial">Partial Only</option>
                 <option value="Unpaid">Unpaid Only</option>
               </select>
-              <button class="btn btn-secondary btn-sm" onclick="exportInvoicesToCSV()" style="display: inline-flex; align-items: center; gap: 6px;">
+              <button class="btn btn-secondary btn-sm" onclick="exportInvoicesToCSV()" style="display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; font-weight: 600; white-space: nowrap;">
                 <i class="fa-solid fa-file-csv text-emerald"></i> Export CSV
               </button>
-              <div class="search-box">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" id="search-history-input" placeholder="Search Invoice # or Customer...">
-              </div>
             </div>
           </div>
           <div class="table-responsive">
