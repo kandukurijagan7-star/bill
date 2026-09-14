@@ -932,6 +932,7 @@ function initRealtimeMeshSync() {
       console.log(`⚡ High-Speed Cross-User Mesh Active via ${activeBrokerName}!`);
       realtimeMeshClient.subscribe(SYNC_MESH_TOPIC, { qos: 0 });
       realtimeMeshClient.subscribe('aaryan_aqua_gst_billing_2026/whatsapp_status', { qos: 0 });
+      realtimeMeshClient.subscribe('aaryan_aqua_gst_billing_2026/whatsapp_ack', { qos: 0 });
       // Announce presence and request state from any active peer
       broadcastInterTabEvent('SYNC_REQUEST', { requesterId: MY_SYNC_CLIENT_ID });
       if (typeof window.updateRealtimePresenceHUD === 'function') window.updateRealtimePresenceHUD("live");
@@ -939,6 +940,14 @@ function initRealtimeMeshSync() {
 
     realtimeMeshClient.on('message', (topic, message) => {
       try {
+        if (topic === 'aaryan_aqua_gst_billing_2026/whatsapp_ack') {
+          const ackData = JSON.parse(message.toString());
+          if (ackData && ackData.commandId && window.waCommandCallbacks && window.waCommandCallbacks[ackData.commandId]) {
+            window.waCommandCallbacks[ackData.commandId](ackData);
+          }
+          return;
+        }
+
         if (topic === 'aaryan_aqua_gst_billing_2026/whatsapp_status') {
           const waData = JSON.parse(message.toString());
           if (waData && typeof waData === 'object') {
@@ -7713,17 +7722,39 @@ try {
   cachedWaStatus = JSON.parse(localStorage.getItem('wa_bot_status_cache') || 'null');
 } catch (e) {}
 
-let whatsappBotStatus = (cachedWaStatus && cachedWaStatus.status === 'CONNECTED')
+// Strict freshness check: A cached status is only considered connected if heartbeat was seen in last 30s
+const isCachedFresh = cachedWaStatus && cachedWaStatus.status === 'CONNECTED' && (Date.now() - Number(cachedWaStatus.lastHeartbeat || cachedWaStatus.timestamp || 0) < 30000);
+
+let whatsappBotStatus = isCachedFresh
   ? cachedWaStatus
   : { status: 'DISCONNECTED', isReady: false, qrCodeDataUrl: null, clientInfo: null };
 
+window.isLiveBotConnected = function() {
+  if (!whatsappBotStatus) return false;
+  if (!whatsappBotStatus.isReady && whatsappBotStatus.status !== 'CONNECTED') return false;
+  if (window.location.hostname === 'localhost' && window.location.port === '3001') return true;
+  const hb = Number(whatsappBotStatus.lastHeartbeat || whatsappBotStatus.timestamp || 0);
+  if (!hb) return false;
+  const age = Date.now() - hb;
+  return age < 35000; // Must have heartbeat within last 35 seconds
+};
+
 function saveWaStatusCache(data) {
-  if (data && data.status === 'CONNECTED') {
+  if (data && data.status === 'CONNECTED' && data.lastHeartbeat) {
     try { localStorage.setItem('wa_bot_status_cache', JSON.stringify(data)); } catch (e) {}
   } else if (data && data.status === 'DISCONNECTED') {
     try { localStorage.removeItem('wa_bot_status_cache'); } catch (e) {}
   }
 }
+
+// Proactive Heartbeat Watchdog: Demote stale WhatsApp status if heartbeat stopped for > 30s
+setInterval(() => {
+  if (whatsappBotStatus && whatsappBotStatus.status === 'CONNECTED' && typeof window.isLiveBotConnected === 'function' && !window.isLiveBotConnected()) {
+    whatsappBotStatus.status = 'DISCONNECTED';
+    whatsappBotStatus.isReady = false;
+    updateWhatsAppBotPillUI(whatsappBotStatus);
+  }
+}, 8000);
 
 let whatsappPollInterval = null;
 let whatsappEventSource = null;
@@ -7867,7 +7898,8 @@ function updateWhatsAppBotPillUI(data) {
   }
 
   // 2. CONNECTED STATE (Emerald Theme, Radar Wave Pulse, Brand Icon)
-  if (data && data.status === "CONNECTED") {
+  const isReallyLive = data && data.status === "CONNECTED" && (typeof window.isLiveBotConnected === 'function' ? window.isLiveBotConnected() : true);
+  if (isReallyLive) {
     pill.classList.add("connected");
     if (radarDot) radarDot.style.display = "inline-block";
     if (statusIcon) {
@@ -8874,13 +8906,42 @@ async function generateInvoicePdfBlob(details) {
   return { blob, pdfBase64, filename };
 }
 
-// Helper Functions for Dual-Mode Dispatch (Local HTTP + EMQX Cloud Mesh Relay)
+window.waCommandCallbacks = window.waCommandCallbacks || {};
+
+function waitForMqttBotAck(cmdId, timeoutMs = 2800) {
+  return new Promise((resolve) => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if (!done) {
+        done = true;
+        delete window.waCommandCallbacks[cmdId];
+        console.warn(`⏳ WhatsApp Bot ACK timed out (${timeoutMs}ms) for ${cmdId}. Triggering fallback.`);
+        resolve(false);
+      }
+    }, timeoutMs);
+
+    window.waCommandCallbacks[cmdId] = (ack) => {
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        delete window.waCommandCallbacks[cmdId];
+        if (ack && ack.status === 'DELIVERED') {
+          resolve(true);
+        } else {
+          console.warn(`❌ WhatsApp Bot reported failure for ${cmdId}:`, ack && ack.error);
+          resolve(false);
+        }
+      }
+    };
+  });
+}
+
+// Helper Functions for Dual-Mode Dispatch (Local HTTP + EMQX Cloud Mesh Relay with Delivery Confirmation)
 async function dispatchWhatsAppBotInvoice({ phone, text, filename, pdfBase64 }) {
   if (!phone) return false;
   const cleanPhone = formatWhatsAppPhone(phone);
   if (!cleanPhone) return false;
 
-  // Ensure caption never carries raw base64 or giant binary strings
   const cleanCaption = (text && typeof text === 'string' && !text.startsWith('data:') && !text.startsWith('JVBERi0') && text.length < 2000)
     ? text
     : '';
@@ -8902,18 +8963,26 @@ async function dispatchWhatsAppBotInvoice({ phone, text, filename, pdfBase64 }) 
         if (data && data.ok) return true;
       }
     } catch (e) {
-      console.log("Local HTTP POST unavailable on Netlify/HTTPS. Relaying via MQTT Mesh...");
+      console.log("Local HTTP POST unavailable. Relaying via MQTT Mesh...");
     }
   }
 
-  // 2. Relay via EMQX MQTT Cloud Mesh (Works 100% on Netlify & GitHub Pages)
+  // 2. Only attempt MQTT relay if bot is confirmed genuinely live (<35s heartbeat)
+  if (typeof window.isLiveBotConnected === 'function' && !window.isLiveBotConnected()) {
+    console.log("ℹ️ WhatsApp Bot is not live (no recent heartbeat). Skipping MQTT bot dispatch.");
+    return false;
+  }
+
+  // 3. Relay via EMQX MQTT Cloud Mesh with Delivery Confirmation (ACK)
   if (realtimeMeshClient && realtimeMeshClient.connected) {
     try {
-      // Free public MQTT brokers (EMQX / HiveMQ) have a hard packet limit of 64KB!
-      // If pdfBase64 is large (> 40KB), sending it will crash the MQTT payload and be silently dropped.
-      // Omit oversized base64 over MQTT so the text invoice is guaranteed to deliver.
+      const cmdId = 'inv_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
       const safePdfBase64 = (pdfBase64 && typeof pdfBase64 === 'string' && pdfBase64.length < 40000) ? pdfBase64 : null;
+      
+      const ackPromise = waitForMqttBotAck(cmdId, 2800);
+
       realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({
+        commandId: cmdId,
         command: 'send_invoice',
         phone: cleanPhone,
         text: cleanCaption,
@@ -8921,8 +8990,13 @@ async function dispatchWhatsAppBotInvoice({ phone, text, filename, pdfBase64 }) 
         pdfBase64: safePdfBase64,
         timestamp: Date.now()
       }));
-      console.log(`⚡ Automated WhatsApp Invoice dispatched to +${cleanPhone} via MQTT Mesh!`);
-      return true;
+
+      console.log(`⚡ WhatsApp Invoice command ${cmdId} dispatched via MQTT Mesh, waiting for ACK...`);
+      const delivered = await ackPromise;
+      if (delivered) {
+        console.log(`✅ WhatsApp Invoice confirmed delivered by Bot to +${cleanPhone}!`);
+        return true;
+      }
     } catch (mqttErr) {
       console.warn("MQTT Mesh publish error:", mqttErr);
     }
@@ -8936,6 +9010,7 @@ async function dispatchWhatsAppBotMessage({ phone, text }) {
   const cleanPhone = formatWhatsAppPhone(phone);
   if (!cleanPhone) return false;
 
+  // 1. Try local HTTP POST if on localhost / port 3001
   if (window.location.port === '3001' || window.location.hostname === 'localhost') {
     try {
       const controller = new AbortController();
@@ -8952,20 +9027,36 @@ async function dispatchWhatsAppBotMessage({ phone, text }) {
         if (data && data.ok) return true;
       }
     } catch (e) {
-      console.log("Local HTTP POST unavailable on Netlify/HTTPS. Relaying via MQTT Mesh...");
+      console.log("Local HTTP POST unavailable. Relaying via MQTT Mesh...");
     }
   }
 
+  // 2. Only attempt MQTT relay if bot is confirmed genuinely live (<35s heartbeat)
+  if (typeof window.isLiveBotConnected === 'function' && !window.isLiveBotConnected()) {
+    console.log("ℹ️ WhatsApp Bot is not live (no recent heartbeat). Skipping MQTT bot dispatch.");
+    return false;
+  }
+
+  // 3. Relay via EMQX MQTT Cloud Mesh with Delivery Confirmation (ACK)
   if (realtimeMeshClient && realtimeMeshClient.connected) {
     try {
+      const cmdId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      const ackPromise = waitForMqttBotAck(cmdId, 2800);
+
       realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({
+        commandId: cmdId,
         command: 'send_message',
         phone: cleanPhone,
         text,
         timestamp: Date.now()
       }));
-      console.log(`⚡ Automated WhatsApp Message dispatched to +${cleanPhone} via MQTT Mesh!`);
-      return true;
+
+      console.log(`⚡ WhatsApp Message command ${cmdId} dispatched via MQTT Mesh, waiting for ACK...`);
+      const delivered = await ackPromise;
+      if (delivered) {
+        console.log(`✅ WhatsApp Message confirmed delivered by Bot to +${cleanPhone}!`);
+        return true;
+      }
     } catch (mqttErr) {
       console.warn("MQTT Mesh publish error:", mqttErr);
     }
@@ -9007,7 +9098,7 @@ async function autoDispatchInvoiceToWhatsApp(details, textOrBase64 = null, preco
   const filename = `Invoice_${details.invoiceNo}_${customerClean}.pdf`;
 
   // Check live status if needed
-  let isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED');
+  let isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED') && (typeof window.isLiveBotConnected === 'function' ? window.isLiveBotConnected() : true);
 
   if (!pdfBase64) {
     try {
@@ -9111,7 +9202,7 @@ window.shareInvoicePdfNative = async function(details, btnEl = null, force1Click
   }
 
   // Always check live bot status first!
-  let isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED');
+  let isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED') && (typeof window.isLiveBotConnected === 'function' ? window.isLiveBotConnected() : true);
 
   // --- AUTOMATED BACKGROUND BOT DISPATCH (SILENT - ZERO BROWSER REDIRECT) ---
   if (isBotReady && cleanPhone && !force1Click) {
@@ -9515,8 +9606,8 @@ window.sendWhatsAppPaymentReminder = async function(id, btnEl = null) {
     btnEl.disabled = true;
   }
 
-  // Check live bot status
-  let isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED');
+  // Check live bot status strictly
+  let isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED') && (typeof window.isLiveBotConnected === 'function' ? window.isLiveBotConnected() : true);
   if (!isBotReady && isLocalCompanionAvailable()) {
     try {
       const controller = new AbortController();
@@ -11190,7 +11281,7 @@ function createPartyListCard(p) {
         ${duesBadge}
       </div>
       ${p.company ? `<p style="font-weight:600; color:var(--text-dark); margin: 2px 0;">${p.company}</p>` : ''}
-      <p style="font-size:10.5px; color:#475569; white-space: pre-line; margin-bottom: 4px;">${p.address}</p>
+      <p style="font-size:10.5px; color:#475569; white-space: pre-line; margin-bottom: 4px;">${p.address || ''}</p>
       <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #64748b;">
         <span>${p.phone ? 'Ph: ' + p.phone : ''}</span>
         <span style="font-weight: 600;">Billed: ₹ ${formatCurrency(totalBilled)} (${customerInvoices.length} bills)</span>

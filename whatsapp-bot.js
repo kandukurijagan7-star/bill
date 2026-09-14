@@ -9,6 +9,7 @@ const mqtt = require('mqtt');
 
 const WA_STATUS_TOPIC = 'aaryan_aqua_gst_billing_2026/whatsapp_status';
 const WA_COMMANDS_TOPIC = 'aaryan_aqua_gst_billing_2026/whatsapp_commands';
+const WA_ACK_TOPIC = 'aaryan_aqua_gst_billing_2026/whatsapp_ack';
 let mqttBridgeClient = null;
 
 process.on('uncaughtException', (err) => {
@@ -128,7 +129,7 @@ function cleanChromiumLocks(dir) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         cleanChromiumLocks(fullPath);
-      } else if (entry.name.startsWith('Singleton') || entry.name === 'SingletonLock' || entry.name === 'SingletonCookie' || entry.name === 'SingletonSocket') {
+      } else if (entry.name.startsWith('Singleton') || entry.name === 'SingletonLock' || entry.name === 'SingletonCookie' || entry.name === 'SingletonSocket' || entry.name === 'lockfile' || entry.name === 'LOCK') {
         try { fs.unlinkSync(fullPath); } catch (e) {}
       }
     }
@@ -199,15 +200,36 @@ function initMqttBridge() {
     mqttBridgeClient = mqtt.connect(broker, {
       clientId: 'wa_host_daemon_' + Math.random().toString(36).substring(2, 8),
       clean: true,
-      keepalive: 30,
+      keepalive: 15,
       reconnectPeriod: 3000,
-      connectTimeout: 6000
+      connectTimeout: 6000,
+      will: {
+        topic: WA_STATUS_TOPIC,
+        payload: JSON.stringify({
+          status: 'DISCONNECTED',
+          isReady: false,
+          lastHeartbeat: 0,
+          timestamp: 0,
+          desc: 'Bot offline (process terminated)'
+        }),
+        qos: 1,
+        retain: true
+      }
     });
 
     mqttBridgeClient.on('connect', () => {
       console.log(`⚡ WhatsApp Bot Cloud Mesh ACTIVE via ${broker}! Synchronizing live QR & commands to Netlify.`);
       mqttBridgeClient.subscribe(WA_COMMANDS_TOPIC, { qos: 0 });
       broadcastStatus();
+
+      // Ensure periodic 10s heartbeat so web clients know the bot is genuinely alive
+      if (!global.waHeartbeatInterval) {
+        global.waHeartbeatInterval = setInterval(() => {
+          if (mqttBridgeClient && mqttBridgeClient.connected) {
+            broadcastStatus();
+          }
+        }, 10000);
+      }
     });
 
     mqttBridgeClient.on('message', async (topic, message) => {
@@ -241,9 +263,30 @@ function initMqttBridge() {
               const chatId = formatPhone(cmd.phone);
               if (chatId) {
                 console.log(`💬 Sending WhatsApp Message via Cloud Mesh to +${cmd.phone}...`);
-                await client.sendMessage(chatId, cmd.text);
-                logActivity({ type: 'MESSAGE', phone: cmd.phone, status: 'SENT' });
-                console.log(`✅ WhatsApp Message delivered to +${cmd.phone}!`);
+                try {
+                  await client.sendMessage(chatId, cmd.text);
+                  logActivity({ type: 'MESSAGE', phone: cmd.phone, status: 'SENT' });
+                  console.log(`✅ WhatsApp Message delivered to +${cmd.phone}!`);
+                  if (mqttBridgeClient && mqttBridgeClient.connected) {
+                    mqttBridgeClient.publish(WA_ACK_TOPIC, JSON.stringify({
+                      commandId: cmd.commandId || cmd.timestamp,
+                      phone: cmd.phone,
+                      status: 'DELIVERED',
+                      timestamp: Date.now()
+                    }));
+                  }
+                } catch (sendErr) {
+                  console.error(`❌ Send message error to +${cmd.phone}:`, sendErr.message);
+                  if (mqttBridgeClient && mqttBridgeClient.connected) {
+                    mqttBridgeClient.publish(WA_ACK_TOPIC, JSON.stringify({
+                      commandId: cmd.commandId || cmd.timestamp,
+                      phone: cmd.phone,
+                      status: 'FAILED',
+                      error: sendErr.message,
+                      timestamp: Date.now()
+                    }));
+                  }
+                }
               }
             }
           } else if (cmd.command === 'send_invoice' || cmd.action === 'send_invoice') {
@@ -251,15 +294,36 @@ function initMqttBridge() {
               const chatId = formatPhone(cmd.phone);
               if (chatId) {
                 console.log(`📄 Sending WhatsApp Invoice & PDF via Cloud Mesh to +${cmd.phone}...`);
-                if (cmd.pdfBase64) {
-                  const cleanB64 = cmd.pdfBase64.replace(/^data:application\/pdf;base64,/, '');
-                  const media = new MessageMedia('application/pdf', cleanB64, cmd.filename || 'Invoice.pdf');
-                  await client.sendMessage(chatId, media, { caption: sanitizeCaption(cmd.text || cmd.caption || ''), sendMediaAsDocument: true });
-                } else if (cmd.text) {
-                  await client.sendMessage(chatId, cmd.text);
+                try {
+                  if (cmd.pdfBase64) {
+                    const cleanB64 = cmd.pdfBase64.replace(/^data:application\/pdf;base64,/, '');
+                    const media = new MessageMedia('application/pdf', cleanB64, cmd.filename || 'Invoice.pdf');
+                    await client.sendMessage(chatId, media, { caption: sanitizeCaption(cmd.text || cmd.caption || ''), sendMediaAsDocument: true });
+                  } else if (cmd.text) {
+                    await client.sendMessage(chatId, cmd.text);
+                  }
+                  logActivity({ type: 'INVOICE_PDF', phone: cmd.phone, filename: cmd.filename, status: 'SENT' });
+                  console.log(`🚀 WhatsApp Invoice & PDF delivered to +${cmd.phone}!`);
+                  if (mqttBridgeClient && mqttBridgeClient.connected) {
+                    mqttBridgeClient.publish(WA_ACK_TOPIC, JSON.stringify({
+                      commandId: cmd.commandId || cmd.timestamp,
+                      phone: cmd.phone,
+                      status: 'DELIVERED',
+                      timestamp: Date.now()
+                    }));
+                  }
+                } catch (invErr) {
+                  console.error(`❌ Send invoice error to +${cmd.phone}:`, invErr.message);
+                  if (mqttBridgeClient && mqttBridgeClient.connected) {
+                    mqttBridgeClient.publish(WA_ACK_TOPIC, JSON.stringify({
+                      commandId: cmd.commandId || cmd.timestamp,
+                      phone: cmd.phone,
+                      status: 'FAILED',
+                      error: invErr.message,
+                      timestamp: Date.now()
+                    }));
+                  }
                 }
-                logActivity({ type: 'INVOICE_PDF', phone: cmd.phone, filename: cmd.filename, status: 'SENT' });
-                console.log(`🚀 WhatsApp Invoice & PDF delivered to +${cmd.phone}!`);
               }
             }
           }
@@ -310,7 +374,9 @@ function getStatus() {
     errorMessage,
     qrTimestamp,
     qrExpiresInSec,
-    isQrExpired
+    isQrExpired,
+    lastHeartbeat: Date.now(),
+    timestamp: Date.now()
   };
 }
 
@@ -845,3 +911,20 @@ app.listen(PORT, () => {
     exec(`${startCmd} http://localhost:${PORT}`);
   }
 });
+
+function publishShutdownStatus() {
+  if (mqttBridgeClient && mqttBridgeClient.connected) {
+    try {
+      mqttBridgeClient.publish(WA_STATUS_TOPIC, JSON.stringify({
+        status: 'DISCONNECTED',
+        isReady: false,
+        lastHeartbeat: 0,
+        timestamp: 0,
+        desc: 'Bot host stopped'
+      }), { qos: 1, retain: true });
+    } catch (e) {}
+  }
+}
+process.on('SIGINT', () => { publishShutdownStatus(); process.exit(0); });
+process.on('SIGTERM', () => { publishShutdownStatus(); process.exit(0); });
+
