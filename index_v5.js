@@ -8977,7 +8977,7 @@ async function dispatchWhatsAppBotInvoice({ phone, text, filename, pdfBase64 }) 
   if (realtimeMeshClient && realtimeMeshClient.connected) {
     try {
       const cmdId = 'inv_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-      const safePdfBase64 = (pdfBase64 && typeof pdfBase64 === 'string' && pdfBase64.length < 40000) ? pdfBase64 : null;
+      const safePdfBase64 = (pdfBase64 && typeof pdfBase64 === 'string' && pdfBase64.length < 350000) ? pdfBase64 : null;
       
       const ackPromise = waitForMqttBotAck(cmdId, 2800);
 
