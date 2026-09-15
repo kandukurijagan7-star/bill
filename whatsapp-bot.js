@@ -299,11 +299,12 @@ function initMqttBridge() {
                     const cleanB64 = cmd.pdfBase64.replace(/^data:application\/pdf;base64,/, '');
                     const media = new MessageMedia('application/pdf', cleanB64, cmd.filename || 'Invoice.pdf');
                     await client.sendMessage(chatId, media, { caption: sanitizeCaption(cmd.text || cmd.caption || ''), sendMediaAsDocument: true });
+                    console.log(`📄 WhatsApp Invoice (WITH PDF) delivered to +${cmd.phone}!`);
                   } else if (cmd.text) {
                     await client.sendMessage(chatId, cmd.text);
+                    console.log(`💬 WhatsApp Invoice (TEXT ONLY, PDF STRIPPED) delivered to +${cmd.phone}!`);
                   }
                   logActivity({ type: 'INVOICE_PDF', phone: cmd.phone, filename: cmd.filename, status: 'SENT' });
-                  console.log(`🚀 WhatsApp Invoice & PDF delivered to +${cmd.phone}!`);
                   if (mqttBridgeClient && mqttBridgeClient.connected) {
                     mqttBridgeClient.publish(WA_ACK_TOPIC, JSON.stringify({
                       commandId: cmd.commandId || cmd.timestamp,
