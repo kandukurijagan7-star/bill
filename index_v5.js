@@ -8870,8 +8870,8 @@ async function generateInvoicePdfBlob(details) {
   const opt = {
     margin: [3, 3, 3, 3],
     filename: filename,
-    image: { type: 'jpeg', quality: 0.95 },
-    html2canvas: { scale: 1.35, useCORS: true, logging: false },
+    image: { type: 'jpeg', quality: 0.75 },
+    html2canvas: { scale: 1.1, useCORS: true, logging: false },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
   };
 
@@ -9207,10 +9207,10 @@ window.shareInvoicePdfNative = async function(details, btnEl = null, force1Click
   // --- AUTOMATED BACKGROUND BOT DISPATCH (SILENT - ZERO BROWSER REDIRECT) ---
   if (isBotReady && cleanPhone && !force1Click) {
     if (btnEl && btnEl.tagName) {
-      btnEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending via Bot...`;
+      btnEl.innerHTML = `<i class="fa-solid fa-file-pdf fa-fade"></i> Generating PDF...`;
       btnEl.disabled = true;
     }
-    showFloatingToast(`🤖 Sending invoice #${details.invoiceNo} & PDF silently to Consignee (+${cleanPhone}) via WhatsApp Bot...`, 3000);
+    showFloatingToast(`🤖 Generating & uploading invoice #${details.invoiceNo} silently to +${cleanPhone} via Bot...`, 3000);
 
     try {
       let pdfBase64 = precomputedBase64;
@@ -9221,6 +9221,10 @@ window.shareInvoicePdfNative = async function(details, btnEl = null, force1Click
         } catch (e) {
           console.warn("Could not compile PDF for bot share:", e);
         }
+      }
+
+      if (btnEl && btnEl.tagName) {
+        btnEl.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-fade"></i> Sending via Bot...`;
       }
 
       // Send to Consignee first, and if Receiver also has a distinct phone, send to Receiver as well!
