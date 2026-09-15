@@ -487,10 +487,10 @@ const MY_SYNC_CLIENT_ID = 'client_' + Date.now().toString(36) + '_' + Math.rando
 const SYNC_MESH_TOPIC = 'aaryan_aqua_gst_billing_2026/db_sync';
 let realtimeMeshClient = null;
 const MESH_BROKERS = [
+  'wss://test.mosquitto.org:8081/mqtt',
   'wss://broker.emqx.io:8084/mqtt',
-  'wss://broker-cn.emqx.io:8084/mqtt',
   'wss://broker.hivemq.com:8884/mqtt',
-  'wss://test.mosquitto.org:8081/mqtt'
+  'wss://broker-cn.emqx.io:8084/mqtt'
 ];
 let currentBrokerIdx = 0;
 let meshReconnectTimer = null;

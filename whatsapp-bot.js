@@ -183,9 +183,9 @@ async function handleDisconnect() {
 
 function initMqttBridge() {
   const brokers = [
-    'mqtt://broker.emqx.io:1883',
-    'mqtt://broker.hivemq.com:1883',
-    'mqtt://test.mosquitto.org:1883'
+    'wss://test.mosquitto.org:8081',
+    'wss://broker.emqx.io:8084/mqtt',
+    'wss://broker.hivemq.com:8884/mqtt'
   ];
   let brokerIdx = 0;
 
