@@ -8979,7 +8979,7 @@ async function dispatchWhatsAppBotInvoice({ phone, text, filename, pdfBase64 }) 
       const cmdId = 'inv_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
       const safePdfBase64 = pdfBase64 ? pdfBase64 : null;
       
-      const ackPromise = waitForMqttBotAck(cmdId, 6500);
+      const ackPromise = waitForMqttBotAck(cmdId, 15000);
 
       realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({
         commandId: cmdId,
@@ -9041,7 +9041,7 @@ async function dispatchWhatsAppBotMessage({ phone, text }) {
   if (realtimeMeshClient && realtimeMeshClient.connected) {
     try {
       const cmdId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-      const ackPromise = waitForMqttBotAck(cmdId, 2800);
+      const ackPromise = waitForMqttBotAck(cmdId, 8000);
 
       realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({
         commandId: cmdId,
